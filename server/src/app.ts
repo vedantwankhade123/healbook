@@ -25,4 +25,14 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", createApiRouter());
 
+// Global Error Handler to prevet 502 crashes on Netlify
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("❌ GLOBAL ERROR:", err);
+  res.status(500).json({ 
+    error: "Internal Server Error", 
+    message: err.message || "An unexpected error occurred",
+    stack: process.env.NODE_ENV === "development" ? err.stack : undefined
+  });
+});
+
 export { app };

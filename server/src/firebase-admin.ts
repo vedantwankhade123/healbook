@@ -48,6 +48,22 @@ export const getAdminDb = () => {
   return admin.firestore();
 };
 
-// For backward compatibility (will throw if not initialized, but only when used)
-export const adminAuth = admin.apps.length ? admin.auth() : null!;
-export const adminDb = admin.apps.length ? admin.firestore() : null!;
+/** 
+ * PROXY FIX: These smart constants act like live getters.
+ * They forward all calls to the real Firebase instance, ensuring it's initialized first.
+ */
+export const adminAuth = new Proxy({} as admin.auth.Auth, {
+  get(_, prop) {
+    const auth = getAdminAuth();
+    if (!auth) throw new Error("Firebase Admin Auth not initialized. Check Netlify Environment Variables.");
+    return (auth as any)[prop];
+  }
+});
+
+export const adminDb = new Proxy({} as admin.firestore.Firestore, {
+  get(_, prop) {
+    const db = getAdminDb();
+    if (!db) throw new Error("Firebase Admin Firestore not initialized. Check Netlify Environment Variables.");
+    return (db as any)[prop];
+  }
+});
