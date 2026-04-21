@@ -11,9 +11,13 @@ async function manualSeed() {
   let successCount = 0;
 
   // 1. Seed Facilities
-  for (const f of facilities) {
-    await adminDb.collection("facilities").doc(f.id).set({
-      ...f,
+  for (const facility of facilities) {
+    if (typeof facility.id !== "string") {
+      continue;
+    }
+
+    await adminDb.collection("facilities").doc(facility.id).set({
+      ...facility,
       createdAt: FieldValue.serverTimestamp()
     }, { merge: true });
     facilityCount++;
@@ -22,6 +26,10 @@ async function manualSeed() {
 
   // 2. Seed Doctors
   for (const docData of doctors) {
+    if (typeof docData.email !== "string" || typeof docData.name !== "string") {
+      continue;
+    }
+
     // Check if user exists by email
     const userSnap = await adminDb.collection("users").where("email", "==", docData.email).limit(1).get();
     
@@ -36,7 +44,7 @@ async function manualSeed() {
         email: docData.email,
         displayName: docData.name,
         role: "doctor",
-        photoURL: docData.profilePhoto,
+        photoURL: typeof docData.profilePhoto === "string" ? docData.profilePhoto : "",
         createdAt: FieldValue.serverTimestamp(),
         isMock: true // Mark as mock for future cleanup if needed
       });
