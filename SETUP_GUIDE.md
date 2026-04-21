@@ -229,11 +229,28 @@ Netlify will automatically detect the `netlify.toml` file, but double-check thes
 ### Step 4: Add Environment Variables
 1. In the Netlify Dashboard, go to **Site configuration** > **Environment variables**.
 2. Add **EVERY** variable from your `.env.local` file.
-3. **IMPORTANT**: For `FIREBASE_PRIVATE_KEY`, ensure you paste the entire string (including `-----BEGIN PRIVATE KEY-----`).
+3. **IMPORTANT Formatting for Netlify**:
+   - **`FIREBASE_PRIVATE_KEY`**: 
+     - Copy the entire key from your JSON file.
+     - It should look like `-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----`.
+     - In the Netlify UI, just paste it directly into the Value field. **DO NOT** wrap it in quotes. The server code is now updated to handle both actual newlines and literal `\n`.
+   - **`CLIENT_ORIGIN`**:
+     - Set this to your production Netlify URL (e.g., `https://healbook.netlify.app`).
+     - This is required to prevent CORS errors during authentication.
+   - **`NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`**:
+     - Ensure this is also added to Netlify so the frontend knows where to talk to.
 
 ### Step 5: Deploy
 1. Click **Deploy site**.
 2. Netlify will build the frontend and bundle the Express server into a lambda function.
-3. Once the deploy is finished, your app will be live!
+3. Once the deploy is finished, your app will be live at a URL like `https://project-name.netlify.app`.
+
+### Step 6: Authorized Domains (Crucial for Auth)
+For Firebase Authentication to work on your live site, you must whitelist the Netlify domain:
+1. Go to **Firebase Console** > **Authentication** > **Settings** > **Authorized domains**.
+2. Click **Add domain**.
+3. Paste your Netlify site URL (e.g., `healbook-123.netlify.app`).
+4. Click **Add**.
+   *Note: Without this step, users will see an "Unauthorized Domain" error when trying to log in.*
 
 ---
