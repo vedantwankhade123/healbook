@@ -8,6 +8,9 @@
     "start": "npm run start -w healbook-server",
     "lint": "npm run lint -w healbook-client --if-present"
   },
+  "overrides": {
+    "hasown": "2.0.2"
+  },
   "devDependencies": {
     "concurrently": "^9.1.2"
   }
