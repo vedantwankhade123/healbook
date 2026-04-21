@@ -1,0 +1,20 @@
+[build]
+  command = "npm run build"
+  publish = "client/dist"
+
+[functions]
+  # Netlify will look for functions in the server build output
+  directory = "server/dist"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  # Route all /api/* calls to our Express Lambda function
+  from = "/api/*"
+  to = "/.netlify/functions/lambda"
+  status = 200
+
+[[redirects]]
+  # Support React Router's client-side routing on Netlify
+  from = "/*"
+  to = "/index.html"
+  status = 200

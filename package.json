@@ -1,0 +1,14 @@
+{
+  "name": "healbook",
+  "private": true,
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev -w healbook-server\" \"npm run dev -w healbook-client\"",
+    "build": "npm run build -w healbook-client && npm run build -w healbook-server",
+    "start": "npm run start -w healbook-server",
+    "lint": "npm run lint -w healbook-client --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

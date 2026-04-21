@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors - Material Design 3 Tokens */
+  --color-primary: #006492;
+  --color-primary-container: #2d9cdb;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #003049;
+  --color-primary-fixed: #cae6ff;
+  --color-primary-fixed-dim: #8ccdff;
+  --color-on-primary-fixed: #001e2f;
+  --color-on-primary-fixed-variant: #004b6f;
+
+  --color-secondary: #516161;
+  --color-secondary-container: #d4e6e5;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #576867;
+  --color-secondary-fixed: #d4e6e5;
+  --color-secondary-fixed-dim: #b8cac9;
+  --color-on-secondary-fixed: #0e1e1e;
+  --color-on-secondary-fixed-variant: #3a4a49;
+
+  --color-tertiary: #835400;
+  --color-tertiary-container: #ffddb5;
+  --color-on-tertiary: #ffffff;
+  --color-on-tertiary-container: #402700;
+  --color-tertiary-fixed: #ffddb5;
+  --color-tertiary-fixed-dim: #ffb957;
+  --color-on-tertiary-fixed: #2a1800;
+  --color-on-tertiary-fixed-variant: #643f00;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  --color-surface: #f8fafb;
+  --color-on-surface: #191c1d;
+  --color-surface-variant: #e1e3e4;
+  --color-on-surface-variant: #3f4850;
+  --color-surface-dim: #d8dadb;
+  --color-surface-bright: #f8fafb;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f2f4f5;
+  --color-surface-container: #eceeef;
+  --color-surface-container-high: #e6e8e9;
+  --color-surface-container-highest: #e1e3e4;
+  --color-inverse-surface: #2e3132;
+  --color-inverse-on-surface: #eff1f2;
+  --color-inverse-primary: #8ccdff;
+
+  --color-outline: #6f7881;
+  --color-outline-variant: #bec7d1;
+  --color-surface-tint: #006492;
+  --color-background: #f8fafb;
+  --color-on-background: #191c1d;
+
+  /* Radius */
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+
+  /* Typography */
+  --font-poppins: "Poppins", sans-serif;
+  --font-body: var(--font-poppins);
+  --font-headline: var(--font-poppins);
+
+  /* Shadows */
+  --shadow-ambient: rgba(25, 28, 29, 0.06) 0px 8px 32px;
+}
+
+@layer base {
+  :root {
+    --background: #f8fafb;
+    --foreground: #191c1d;
+  }
+
+  body {
+    @apply bg-surface text-on-surface font-body antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
+  }
+
+  /* Utility to hide scrollbar */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Utility for a premium, slim scrollbar */
+  .slim-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--color-outline-variant);
+    border-radius: 20px;
+  }
+  .slim-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-outline);
+  }
+  .slim-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-outline-variant) transparent;
+  }
+
+}
+
+@layer components {
+  .auth-gradient {
+    @apply bg-linear-to-br from-primary to-primary-container;
+  }
+
+  .primary-button {
+    @apply bg-linear-to-br from-primary to-primary-container text-white px-6 py-2.5 rounded-lg font-headline font-bold text-sm tracking-tight scale-95 active:scale-90 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/40;
+  }
+
+  .secondary-button {
+    @apply border border-outline-variant/15 bg-surface-container-lowest text-on-primary-container px-6 py-2.5 rounded-lg font-headline font-bold text-sm hover:bg-surface-container-low transition-colors;
+  }
+
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-ambient;
+  }
+
+  @keyframes infinite-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .animate-infinite-scroll {
+    animation: infinite-scroll 40s linear infinite;
+  }
+
+  /* Animated Gradient Cards */
+  @keyframes gradient-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradient-flow 8s ease infinite;
+  }
+
+  .bg-gradient-ocean {
+    background: linear-gradient(135deg, #006492, #00a8cc, #2d9cdb);
+  }
+
+  .bg-gradient-emerald {
+    background: linear-gradient(135deg, #006b5f, #00a58e, #516161);
+  }
+
+  .bg-gradient-sunset {
+    background: linear-gradient(135deg, #835400, #ffb347, #ffddb5);
+  }
+
+  .bg-gradient-royal {
+    background: linear-gradient(135deg, #4c1d95, #8b5cf6, #c084fc);
+  }
+}
