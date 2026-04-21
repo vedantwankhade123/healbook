@@ -51,9 +51,39 @@ export function createApiRouter(): Router {
   });
 
   router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
-    const doc = await adminDb.collection("users").doc(req.uid!).get();
-    if (!doc.exists) return res.status(404).json({ error: "User not found" });
-    res.json({ uid: req.uid, ...doc.data() });
+    const uid = req.uid!;
+    const decoded = req.decodedToken;
+    const fallbackProfile = {
+      uid,
+      name: decoded?.name || "User",
+      email: decoded?.email || "",
+      role: "patient",
+      hasPassword: !!decoded?.email,
+      profileIncomplete: true,
+    };
+
+    try {
+      const ref = adminDb.collection("users").doc(uid);
+      const doc = await ref.get();
+      if (!doc.exists) {
+        await ref.set(
+          {
+            name: fallbackProfile.name,
+            email: fallbackProfile.email,
+            role: "patient",
+            hasPassword: fallbackProfile.hasPassword,
+            createdAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        const created = await ref.get();
+        return res.json({ uid, ...created.data() });
+      }
+      return res.json({ uid, ...doc.data() });
+    } catch (err) {
+      console.error("GET /api/me fallback due to Firestore error:", err);
+      return res.json(fallbackProfile);
+    }
   });
 
   router.post("/users/profile", requireAuth, async (req: AuthedRequest, res) => {

@@ -1,8 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth } from "../firebase-admin.js";
 
 export interface AuthedRequest extends Request {
   uid?: string;
+  decodedToken?: DecodedIdToken;
 }
 
 export async function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -20,6 +22,7 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     }
     const decoded = await auth.verifyIdToken(token);
     req.uid = decoded.uid;
+    req.decodedToken = decoded;
     next();
   } catch (error) {
     console.error("Auth error:", error);
