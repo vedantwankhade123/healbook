@@ -50,7 +50,7 @@ const specializations = [
     "Dietician"
 ];
 
-const symptomsList = [
+export const symptomsList = [
     { name: "Fever", icon: "device_thermostat", category: "General" },
     { name: "Fatigue", icon: "battery_alert", category: "General" },
     { name: "Headache", icon: "psychology", category: "Neurological" },

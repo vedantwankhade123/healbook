@@ -289,7 +289,27 @@ export default function BookAppointmentPage() {
       </aside>
     </div>
 
-      {/* Payment Processing Overlay - Re-designed for Premium Integrated Look */}
+    {/* Mobile Sticky Action Bar - New */}
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 p-4 bg-white/80 backdrop-blur-xl border-t border-outline-variant/10 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] animate-in slide-in-from-bottom duration-500">
+        <div className="max-w-md mx-auto flex items-center justify-between gap-6">
+            <div>
+                <span className="text-[10px] font-black text-outline-variant uppercase tracking-widest block mb-0.5">Total Consultation</span>
+                <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-primary font-poppins tracking-tighter">₹{doctor.consultationFee}</span>
+                    <span className="text-[10px] font-bold text-on-surface-variant/60 uppercase">incl. tax</span>
+                </div>
+            </div>
+            <Button 
+              onClick={handleBooking} 
+              isLoading={loading} 
+              className="flex-1 py-4 rounded-2xl shadow-xl shadow-primary/20 font-poppins font-bold tracking-tight"
+            >
+                Confirm & Pay
+            </Button>
+        </div>
+    </div>
+
+      {/* Payment Processing Overlay */}
       {isProcessingPayment && (
         <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-3xl flex flex-col items-center justify-center p-8 animate-in fade-in zoom-in-110 duration-700">
             <div className="w-full max-w-xl text-center space-y-12">

@@ -19,6 +19,7 @@ export function MainLayout() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   
   const isProfilePage = location.pathname === "/profile";
+  const isBookingPage = location.pathname.includes("/appointments/book/");
   
   const dashHref = user?.role === "doctor" ? "/doctor-dashboard" : "/dashboard";
   const navItems = [
@@ -125,7 +126,7 @@ export function MainLayout() {
 
 
         {!isProfilePage && (
-          <div className="fixed bottom-8 right-8 z-50">
+          <div className={`fixed bottom-8 right-8 z-50 ${isBookingPage ? "hidden lg:block" : "block"}`}>
             <button
               type="button"
               onClick={() => chatWithPrakriti()}

@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { symptomsList } from "./page";
+import { SYMPTOM_TO_SPECIALIZATION } from "@/data/symptom-mapping";
 
 export default function MobileDoctorListingPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -21,6 +23,8 @@ export default function MobileDoctorListingPage() {
   const [maxFee, setMaxFee] = useState(10000);
   const [minExperience, setMinExperience] = useState(0);
   const [availableTodayOnly, setAvailableTodayOnly] = useState(false);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const [symptomSearch, setSymptomSearch] = useState("");
 
   useEffect(() => {
     const prevHtmlOverflowX = document.documentElement.style.overflowX;
@@ -79,6 +83,19 @@ export default function MobileDoctorListingPage() {
       return b.rating - a.rating;
     });
 
+    // Symptoms Filter (Smart Mapping)
+    if (selectedSymptoms.length > 0) {
+      list = list.filter((doctor) => 
+        selectedSymptoms.some((s) => {
+          const symptomName = s.toLowerCase();
+          const directMatch = doctor.treats?.some((t) => t.toLowerCase() === symptomName);
+          const relevantSpecs = SYMPTOM_TO_SPECIALIZATION[s] || [];
+          const specMatch = relevantSpecs.some((spec) => doctor.specialization.toLowerCase() === spec.toLowerCase());
+          return directMatch || specMatch;
+        })
+      );
+    }
+
     return list;
   }, [
     doctors,
@@ -90,6 +107,7 @@ export default function MobileDoctorListingPage() {
     maxFee,
     minExperience,
     availableTodayOnly,
+    selectedSymptoms,
   ]);
 
   return (
@@ -204,18 +222,54 @@ export default function MobileDoctorListingPage() {
                   </select>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setAvailableTodayOnly((prev) => !prev)}
-                  className={`w-full h-9 rounded-xl border text-xs font-bold font-poppins ${
-                    availableTodayOnly
-                      ? "bg-primary text-white border-primary"
-                      : "bg-surface-container-low text-on-surface-variant border-outline-variant/20"
-                  }`}
-                >
-                  Available Today
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => setAvailableTodayOnly((prev) => !prev)}
+                    className={`w-full h-9 rounded-xl border text-xs font-bold font-poppins ${
+                      availableTodayOnly
+                        ? "bg-primary text-white border-primary"
+                        : "bg-surface-container-low text-on-surface-variant border-outline-variant/20"
+                    }`}
+                  >
+                    Available Today
+                  </button>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Filter Symptoms</span>
+                      {selectedSymptoms.length > 0 && (
+                        <button onClick={() => setSelectedSymptoms([])} className="text-[10px] font-bold text-primary uppercase">Clear</button>
+                      )}
+                    </div>
+                    <Input
+                      placeholder="Search symptoms..."
+                      value={symptomSearch}
+                      onChange={(e) => setSymptomSearch(e.target.value)}
+                      className="bg-surface-container-low h-9 text-xs rounded-xl border-outline-variant/10"
+                    />
+                    <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto pt-1">
+                      {symptomsList
+                        .filter(s => s.name.toLowerCase().includes(symptomSearch.toLowerCase()))
+                        .map((s) => {
+                          const isSelected = selectedSymptoms.includes(s.name);
+                          return (
+                            <button
+                              key={s.name}
+                              onClick={() => setSelectedSymptoms(prev => isSelected ? prev.filter(x => x !== s.name) : [...prev, s.name])}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border flex items-center gap-1.5 ${
+                                isSelected 
+                                  ? "bg-primary text-white border-primary" 
+                                  : "bg-white text-on-surface-variant border-outline-variant/20"
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">{s.icon}</span>
+                              {s.name}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
             )}
           </div>
         </div>
