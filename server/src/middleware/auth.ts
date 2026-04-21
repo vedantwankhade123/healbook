@@ -17,7 +17,11 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   try {
     const auth = getAdminAuth();
     if (!auth) {
-      res.status(503).json({ error: "Auth service unavailable. Check server environment config." });
+      console.error("❌ Auth service unavailable. Firebase Admin may not be initialized correctly.");
+      res.status(503).json({ 
+        error: "Auth service unavailable",
+        message: "The authentication service is not responding. This usually means the server environment variables are missing or incorrectly formatted."
+      });
       return;
     }
     const decoded = await auth.verifyIdToken(token);
@@ -25,9 +29,13 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     req.decodedToken = decoded;
     next();
   } catch (error) {
-    console.error("Auth error:", error);
-    res.status(401).json({ error: "Invalid or expired token" });
+    console.error("❌ Auth verification error:", error);
+    res.status(401).json({ 
+      error: "Invalid or expired token",
+      message: error instanceof Error ? error.message : "Token verification failed"
+    });
   }
+
 }
 
 export async function optionalAuth(req: AuthedRequest, _res: Response, next: NextFunction) {

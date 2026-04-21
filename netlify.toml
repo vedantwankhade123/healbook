@@ -23,4 +23,9 @@
 [[headers]]
   for = "/*"
   [headers.values]
+    # Required for Firebase Auth popups to work correctly without being blocked by modern browser security
     Cross-Origin-Opener-Policy = "same-origin-allow-popups"
+    Cross-Origin-Embedder-Policy = "unsafe-none"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+

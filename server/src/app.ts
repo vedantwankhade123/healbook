@@ -26,14 +26,28 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", createApiRouter());
 
-// Global Error Handler to prevet 502 crashes on Netlify
+// Global Error Handler to prevent 502 crashes on Netlify
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("❌ GLOBAL ERROR:", err);
+  
+  // Distinguish between initialization errors and request errors
+  const isAuthInitError = err.message?.includes("Firebase Admin Auth not initialized");
+  const isDbInitError = err.message?.includes("Firebase Admin Firestore not initialized");
+  
+  if (isAuthInitError || isDbInitError) {
+    return res.status(503).json({
+      error: "Service Unavailable",
+      message: err.message,
+      suggestion: "Check Netlify environment variables (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY)."
+    });
+  }
+
   res.status(500).json({ 
     error: "Internal Server Error", 
     message: err.message || "An unexpected error occurred",
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined
   });
 });
+
 
 export { app };

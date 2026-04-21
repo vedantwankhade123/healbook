@@ -10,14 +10,20 @@ function initializeFirebase() {
   const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
 
   if (!projectId || !clientEmail || !privateKeyRaw) {
-    console.error("❌ CRITICAL: Missing Firebase Admin environment variables!");
+    const missing = [];
+    if (!projectId) missing.push("FIREBASE_PROJECT_ID");
+    if (!clientEmail) missing.push("FIREBASE_CLIENT_EMAIL");
+    if (!privateKeyRaw) missing.push("FIREBASE_PRIVATE_KEY");
+    
+    console.error(`❌ CRITICAL: Missing Firebase Admin environment variables: ${missing.join(", ")}`);
     return;
   }
 
   try {
     // Robust private key parsing
     const formattedKey = privateKeyRaw
-      .replace(/^"(.*)"$/s, "$1")
+      .trim()
+      .replace(/^['"](.*)['"]$/s, "$1")
       .replace(/\\n/g, "\n")
       .replace(/\n\s*\n/g, "\n");
 
@@ -33,9 +39,11 @@ function initializeFirebase() {
     isInitialized = true;
     console.log("✅ Firebase Admin initialized successfully.");
   } catch (error) {
-    console.error("❌ Firebase admin initialization error:", error);
+    console.error("❌ Firebase admin initialization error. Check if the private key and project variables are correct.");
+    console.error("Error details:", error instanceof Error ? error.message : error);
   }
 }
+
 
 export const getAdminAuth = () => {
   initializeFirebase();

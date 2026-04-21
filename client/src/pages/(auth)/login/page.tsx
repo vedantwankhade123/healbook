@@ -50,15 +50,26 @@ export default function LoginPage() {
         else if (userData.role === "doctor") navigate("/doctor-dashboard");
         else navigate("/dashboard");
       } else {
-        navigate("/dashboard");
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Backend login error:", errorData);
+        if (res.status === 502) {
+          error("Server side error (502). The backend may have crashed.");
+        } else if (res.status === 503) {
+          error(`Service Unavailable: ${errorData.message || "The backend is not configured correctly."}`);
+        } else {
+          error(errorData.error || errorData.message || "Profile synchronization failed. Redirecting to dashboard...");
+          setTimeout(() => navigate("/dashboard"), 2000);
+        }
       }
     } catch (err: any) {
+      console.error("Login attempt failed:", err);
       if (err.code === "auth/invalid-credential" && email) {
           error("Invalid credentials. If you signed up with Google, please use 'Forgot Password' to set a backup login.");
       } else {
           error(err.message || "Failed to login");
       }
     } finally {
+
       setLoading(false);
     }
   };
@@ -79,11 +90,22 @@ export default function LoginPage() {
         else if (userData.role === "doctor") navigate("/doctor-dashboard");
         else navigate("/dashboard");
       } else {
-        navigate("/dashboard");
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Backend Google login error:", errorData);
+        if (res.status === 502) {
+          error("Server side error (502). The backend may have crashed.");
+        } else if (res.status === 503) {
+          error(`Service Unavailable: ${errorData.message || "The backend is not configured correctly."}`);
+        } else {
+          error(errorData.error || errorData.message || "Profile synchronization failed. Redirecting to dashboard...");
+          setTimeout(() => navigate("/dashboard"), 2000);
+        }
       }
     } catch (err: any) {
+        console.error("Google login failed:", err);
         error(err.message || "Google login failed");
     }
+
   };
 
   return (
