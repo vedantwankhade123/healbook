@@ -1,4 +1,5 @@
 import "./load-env.js";
+import "express-async-errors";
 import express from "express";
 import cors from "cors";
 import { createApiRouter } from "./routes.js";

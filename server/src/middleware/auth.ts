@@ -15,7 +15,8 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   try {
     const auth = getAdminAuth();
     if (!auth) {
-      throw new Error("Firebase Admin not initialized");
+      res.status(503).json({ error: "Auth service unavailable. Check server environment config." });
+      return;
     }
     const decoded = await auth.verifyIdToken(token);
     req.uid = decoded.uid;

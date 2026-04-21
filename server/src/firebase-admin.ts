@@ -7,16 +7,17 @@ function initializeFirebase() {
   
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
 
-  if (!projectId || !clientEmail || !privateKey) {
+  if (!projectId || !clientEmail || !privateKeyRaw) {
     console.error("❌ CRITICAL: Missing Firebase Admin environment variables!");
     return;
   }
 
   try {
     // Robust private key parsing
-    const formattedKey = privateKey
+    const formattedKey = privateKeyRaw
+      .replace(/^"(.*)"$/s, "$1")
       .replace(/\\n/g, "\n")
       .replace(/\n\s*\n/g, "\n");
 
