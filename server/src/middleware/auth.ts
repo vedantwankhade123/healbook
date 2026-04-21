@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { adminAuth } from "../firebase-admin.js";
+import { getAdminAuth } from "../firebase-admin.js";
 
 export interface AuthedRequest extends Request {
   uid?: string;
@@ -13,10 +13,15 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
   }
   const token = header.slice(7);
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
+    const auth = getAdminAuth();
+    if (!auth) {
+      throw new Error("Firebase Admin not initialized");
+    }
+    const decoded = await auth.verifyIdToken(token);
     req.uid = decoded.uid;
     next();
-  } catch {
+  } catch (error) {
+    console.error("Auth error:", error);
     res.status(401).json({ error: "Invalid or expired token" });
   }
 }
@@ -29,8 +34,11 @@ export async function optionalAuth(req: AuthedRequest, _res: Response, next: Nex
   }
   const token = header.slice(7);
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    req.uid = decoded.uid;
+    const auth = getAdminAuth();
+    if (auth) {
+      const decoded = await auth.verifyIdToken(token);
+      req.uid = decoded.uid;
+    }
   } catch {
     req.uid = undefined;
   }

@@ -2,7 +2,7 @@ import { Router, type Response, type NextFunction } from "express";
 import type { Query } from "firebase-admin/firestore";
 import { FieldValue } from "firebase-admin/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { adminAuth, adminDb } from "./firebase-admin.js";
+import { adminAuth, adminDb, getAdminAuth, getAdminDb } from "./firebase-admin.js";
 import type { AuthedRequest } from "./middleware/auth.js";
 import { requireAuth, optionalAuth } from "./middleware/auth.js";
 import { buildUserContext } from "./lib/prakriti.js";
@@ -33,6 +33,22 @@ async function requireAdmin(req: AuthedRequest, res: Response, next: NextFunctio
 
 export function createApiRouter(): Router {
   const router = Router();
+
+  router.get("/health", (_req, res) => {
+    const auth = getAdminAuth();
+    const db = getAdminDb();
+    res.json({
+      ok: !!(auth && db),
+      firebase: {
+        projectId: !!process.env.FIREBASE_PROJECT_ID,
+        clientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+        privateKeyLen: process.env.FIREBASE_PRIVATE_KEY?.length || 0,
+      },
+      env: process.env.NODE_ENV,
+      netlify: !!process.env.NETLIFY,
+    });
+  });
 
   router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     const doc = await adminDb.collection("users").doc(req.uid!).get();
