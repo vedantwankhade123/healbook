@@ -35,6 +35,8 @@ function initializeFirebase() {
           privateKey: formattedKey,
         }),
       });
+      // Enable ignoring undefined properties globally to prevent crashes on missing optional fields
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
     }
     isInitialized = true;
     console.log("✅ Firebase Admin initialized successfully.");

@@ -96,23 +96,37 @@ export function createApiRouter(): Router {
 
   router.post("/users/profile", requireAuth, async (req: AuthedRequest, res) => {
     const uid = req.uid!;
-    const ref = adminDb.collection("users").doc(uid);
-    const existing = await ref.get();
-    if (existing.exists) {
-      return res.status(409).json({ error: "Profile already exists" });
+    try {
+      const ref = adminDb.collection("users").doc(uid);
+      const existing = await ref.get();
+      if (existing.exists) {
+        return res.status(409).json({ error: "Profile already exists" });
+      }
+
+      const body = req.body as Record<string, unknown>;
+      
+      // Sanitizing body to ensure no undefined values are passed just in case 
+      // (though ignoreUndefinedProperties should handle this now)
+      const userData = {
+        name: body.name || "User",
+        email: body.email || "",
+        role: body.role || "patient",
+        phoneNumber: body.phoneNumber || null,
+        profilePhoto: body.profilePhoto || null,
+        hasPassword: body.hasPassword ?? false,
+        createdAt: FieldValue.serverTimestamp(),
+      };
+
+      await ref.set(userData);
+      const doc = await ref.get();
+      res.status(201).json({ uid, ...doc.data() });
+    } catch (error) {
+      console.error("❌ Error in POST /api/users/profile:", error);
+      res.status(500).json({ 
+        error: "Failed to create profile", 
+        message: error instanceof Error ? error.message : "Persistence error" 
+      });
     }
-    const body = req.body as Record<string, unknown>;
-    await ref.set({
-      name: body.name,
-      email: body.email,
-      role: body.role || "patient",
-      phoneNumber: body.phoneNumber,
-      profilePhoto: body.profilePhoto,
-      hasPassword: body.hasPassword ?? false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    const doc = await ref.get();
-    res.status(201).json({ uid, ...doc.data() });
   });
 
   router.patch("/me", requireAuth, async (req: AuthedRequest, res) => {
