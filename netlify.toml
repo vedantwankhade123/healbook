@@ -1,6 +1,6 @@
 [build]
   # Work around npm optional-dependency bug in CI for Rollup/LightningCSS native binaries.
-  command = "npm install --no-save @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu && npm run build"
+  command = "npm install --no-save @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu && npm run build"
   publish = "client/dist"
 
 [functions]
