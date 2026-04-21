@@ -61,10 +61,16 @@ export function createApiRouter(): Router {
   router.get("/me", requireAuth, async (req: AuthedRequest, res) => {
     const uid = req.uid!;
     const decoded = req.decodedToken;
+    
+    // Better fallback name: name from token, or email prefix, or "User"
+    const email = decoded?.email || "";
+    const emailPrefix = email ? email.split("@")[0] : "";
+    const fallbackName = decoded?.name || (emailPrefix ? emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1) : "User");
+
     const fallbackProfile = {
       uid,
-      name: decoded?.name || "User",
-      email: decoded?.email || "",
+      name: fallbackName,
+      email: email,
       role: "patient",
       hasPassword: !!decoded?.email,
       profileIncomplete: true,
@@ -80,6 +86,7 @@ export function createApiRouter(): Router {
             email: fallbackProfile.email,
             role: "patient",
             hasPassword: fallbackProfile.hasPassword,
+            profileIncomplete: true,
             createdAt: FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -98,15 +105,11 @@ export function createApiRouter(): Router {
     const uid = req.uid!;
     try {
       const ref = adminDb.collection("users").doc(uid);
-      const existing = await ref.get();
-      if (existing.exists) {
-        return res.status(409).json({ error: "Profile already exists" });
-      }
-
+      
+      // We no longer block if the document exists, because /api/me might have 
+      // created a temporary shell profile during the registration race condition.
       const body = req.body as Record<string, unknown>;
       
-      // Sanitizing body to ensure no undefined values are passed just in case 
-      // (though ignoreUndefinedProperties should handle this now)
       const userData = {
         name: body.name || "User",
         email: body.email || "",
@@ -114,10 +117,19 @@ export function createApiRouter(): Router {
         phoneNumber: body.phoneNumber || null,
         profilePhoto: body.profilePhoto || null,
         hasPassword: body.hasPassword ?? false,
-        createdAt: FieldValue.serverTimestamp(),
+        profileIncomplete: false, // Mark as completed
+        updatedAt: FieldValue.serverTimestamp(),
       };
 
-      await ref.set(userData);
+      // Use merge: true to avoid deleting fields that might have been set by /api/me or other logic
+      await ref.set(userData, { merge: true });
+      
+      // If it's a new document, set createdAt (merge won't set it if we don't include it, but we want it only once)
+      const existing = await ref.get();
+      if (!existing.get("createdAt")) {
+        await ref.update({ createdAt: FieldValue.serverTimestamp() });
+      }
+
       const doc = await ref.get();
       res.status(201).json({ uid, ...doc.data() });
     } catch (error) {
