@@ -11,7 +11,13 @@ import { generateExtendedDataset } from "./data/doctors-seed.js";
 import { confirmAppointmentPayment } from "./lib/confirmAppointmentPayment.js";
 import { createUserNotification } from "./lib/notifications.js";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+/** Lazy-load Gemini AI to prevent initialization crashes during module load. */
+function getGenAI() {
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+}
+
+// Verification timestamp for current deployment
+const DEPLOY_VERSION = "2026-04-21-v3-esm-fix";
 
 async function getUserRole(uid: string): Promise<string | undefined> {
   const doc = await adminDb.collection("users").doc(uid).get();
@@ -39,6 +45,7 @@ export function createApiRouter(): Router {
     const db = getAdminDb();
     res.json({
       ok: !!(auth && db),
+      version: DEPLOY_VERSION,
       firebase: {
         projectId: !!process.env.FIREBASE_PROJECT_ID,
         clientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
@@ -47,6 +54,7 @@ export function createApiRouter(): Router {
       },
       env: process.env.NODE_ENV,
       netlify: !!process.env.NETLIFY,
+      lambda_uptime: process.uptime(),
     });
   });
 
@@ -707,7 +715,7 @@ export function createApiRouter(): Router {
       };
       if (!message) return res.status(400).json({ error: "Message is required" });
 
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const model = getGenAI().getGenerativeModel({ model: "gemini-2.5-flash" });
       let personalizedPrompt = `You are HealBot, an advanced AI Health Assistant for HealBook. Never diagnose; suggest professional care for emergencies. Use markdown.`;
 
       if (userId) {
@@ -749,7 +757,7 @@ export function createApiRouter(): Router {
         return res.status(400).json({ error: "No messages" });
       }
 
-      const reply = await runPrakritiAgent(genAI, adminDb, messages, sessionUid);
+      const reply = await runPrakritiAgent(getGenAI(), adminDb, messages, sessionUid);
       res.json(reply);
     } catch (error: unknown) {
       console.error("Prakriti agent error:", error);
