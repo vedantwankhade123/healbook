@@ -40,37 +40,33 @@ const generateDoctors = () => {
   ];
 
   const cities = ["Delhi", "Mumbai", "Bangalore", "Pune", "Nagpur", "Amravati", "Gurugram", "Hyderabad", "Chennai", "Jaipur"];
-  const names = [
-    "Sharma", "Gupta", "Verma", "Singh", "Malhotra", "Kapoor", "Jain", "Reddy", "Nair", "Patil",
-    "Deshmukh", "Kulkarni", "Mehta", "Bansal", "Shah", "Iyer", "Pillai", "Yadav", "Bajaj", "Ghone",
-    "Pawar", "Kadam", "Rao", "Jha", "Mishra", "Trivedi", "Pandey", "Chauhan", "Agarwal", "Saxena",
-    "Srivastava", "Desai", "Merchant", "Parekh", "Adwani", "Chandak", "Bhutada", "Vaidya", "Rathi", "Lanjewar"
-  ];
+  const names = ["Sharma", "Gupta", "Verma", "Singh", "Malhotra", "Kapoor", "Jain", "Reddy", "Nair", "Patil", "Deshmukh", "Kulkarni", "Mehta", "Bansal", "Shah", "Iyer", "Pillai", "Yadav", "Bajaj", "Ghone", "Pawar", "Kadam", "Rao", "Jha", "Mishra", "Trivedi", "Pandey", "Chauhan", "Agarwal", "Saxena", "Srivastava", "Desai", "Merchant", "Parekh", "Adwani", "Chandak", "Bhutada", "Vaidya", "Rathi", "Lanjewar"];
   const firstNames = ["Dr. Amit", "Dr. Neha", "Dr. Rahul", "Dr. Anjali", "Dr. Vikram", "Dr. Priya", "Dr. Sanjay", "Dr. Meera", "Dr. Arvind", "Dr. Shweta", "Dr. Rajesh", "Dr. Kavita", "Dr. Nitin", "Dr. Snehal", "Dr. Ashish", "Dr. Vaishali", "Dr. Sameer", "Dr. Tanuja", "Dr. Manish", "Dr. Prerna", "Dr. Harpreet", "Dr. Aruna", "Dr. Kailash", "Dr. Varsha", "Dr. Prashant", "Dr. Shailesh", "Dr. Deepali", "Dr. Girish", "Dr. Vinay", "Dr. Shubhada", "Dr. Ajay", "Dr. Leena", "Dr. Abhishek", "Dr. Monica", "Dr. Sandeep", "Dr. Niharika", "Dr. Pallavi", "Dr. Swati", "Dr. Dev", "Dr. Anita"];
 
   let idCounter = 1;
-  specializations.forEach((s) => {
-    // Generate at least 20 doctors per specialization to ensure 15+ for related symptoms
+  specializations.forEach((s, sIdx) => {
+    // Deterministic generation: use indexes instead of Math.random()
     for (let i = 0; i < 22; i++) {
-      const city = cities[Math.floor(Math.random() * cities.length)];
-      const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
-      const lastName = names[Math.floor(Math.random() * names.length)];
+      const city = cities[(sIdx + i) % cities.length];
+      const firstName = firstNames[(sIdx * 5 + i) % firstNames.length];
+      const lastName = names[(sIdx * 3 + i) % names.length];
       const fullName = `${firstName} ${lastName}`;
       
       doctors.push({
         name: fullName,
-        email: `${fullName.toLowerCase().replace(/[\s\.]+/g, "_")}${idCounter++}@healbook.in`,
+        // Deterministic email based on specialization and index
+        email: `${s.spec.toLowerCase().replace(/\s+/g, "")}_${i}@healbook.test`,
         specialization: s.spec,
-        experience: 5 + Math.floor(Math.random() * 25),
+        experience: 5 + (i % 20),
         clinicName: `${lastName} Clinical Center, ${city}`,
-        consultationFee: 400 + Math.floor(Math.random() * 2000),
+        consultationFee: 500 + (i * 50),
         bio: `Specialist in ${s.spec} with a focus on patient-centric outcomes and modern clinical practices.`,
         education: `MBBS, MD (${s.spec}) - Top Medical Institute`,
-        languages: ["English", "Hindi", city === "Mumbai" || city === "Pune" || city === "Nagpur" || city === "Amravati" ? "Marathi" : "Local Language"],
-        rating: 4.5 + Math.random() * 0.5,
+        languages: ["English", "Hindi", ["Mumbai", "Pune", "Nagpur", "Amravati"].includes(city) ? "Marathi" : "Local Language"],
+        rating: 4.5 + ((i % 5) / 10),
         isAvailable: true,
         treats: s.symptoms,
-        profilePhoto: `https://images.unsplash.com/photo-${1500000000000 + idCounter}?q=80&w=2000&auto=format&fit=crop`,
+        profilePhoto: `https://images.unsplash.com/photo-${1500000000000 + (sIdx * 100 + i)}?q=80&w=2000&auto=format&fit=crop`,
       });
     }
   });

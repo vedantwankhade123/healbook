@@ -93,9 +93,12 @@ export default function AdminDoctorsPage() {
 
   const handleSeed = async () => {
     setIsSeeding(true);
-    const id = toastLoading("Syncing 36 Indian Doctors... this will create active user accounts.");
+    const id = toastLoading("Syncing 220+ clinical profiles... this will create active user accounts.");
     try {
-      const res = await fetch("/api/doctors/seed", { method: "POST" });
+      const res = await fetch("/api/seed/doctors", { 
+        method: "POST",
+        credentials: "include"
+      });
       const data = await res.json();
       if (data.results) {
         dismiss(id);
