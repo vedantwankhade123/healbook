@@ -179,24 +179,28 @@ The command above creates the following indexes required for the system:
 
 ## 8. Database Seeding (Initial Data)
 
-To populate the app with doctors and facilities, you can use two methods:
+To populate the app with a robust dataset of 220+ doctors and 20 clinical facilities, use the following methods. The data is now **deterministic** (stable test emails), ensuring that re-running the sync updates records instead of creating duplicates.
 
 ### Method A: Manual Script (Recommended)
-This is the fastest method and doesn't require logging in.
-1. Ensure your `.env.local` contains the `FIREBASE_PRIVATE_KEY` and other credentials.
-2. Open your terminal in the `server` directory and run:
+This is the fastest method and runs directly from your terminal.
+1. Navigate to the `server` directory.
+2. Run the seeding script:
    ```bash
    npx tsx src/scripts/manual-seed.ts
    ```
-3. This will create facilities and mock doctor profiles directly in your Firestore.
 
-### Method B: API Route (For Admins)
-1. Register a new account in the app.
-2. Go to the **Firebase Console** > **Firestore**.
-3. Find your user document in the `users` collection and change the `role` field from `"patient"` to `"admin"`.
-4. Refresh the app and navigate to the Admin Dashboard.
-5. Search for the "Seed Doctors" button in settings or use a tool like Postman to hit:
-   `POST http://localhost:3000/api/seed/doctors` (with your auth token).
+### Method B: Admin Dashboard Sync
+You can also sync data directly from the live web interface:
+1. Log in to the **Admin Dashboard**.
+2. Go to the **Practitioner Registry**.
+3. Click **"Bulk Sync Doctors"**.
+
+### Database Cleanup (Optional)
+If you need to reset the practitioner registry and remove all seeded mock accounts:
+```bash
+npx tsx src/scripts/cleanup-mocks.ts
+```
+*This will safely remove all doctors marked as 'mock' without affecting real user data.*
 
 ---
 
@@ -254,6 +258,7 @@ Netlify will automatically detect the `netlify.toml` file, but double-check thes
    - **`FIREBASE_PRIVATE_KEY`**: 
      - Copy the entire key from your JSON file.
      - It should look like `-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----`.
+     - It should look like `-----BEGIN PRIVATE KEY-\n...\n-----END PRIVATE KEY-\n`.
      - In the Netlify UI, just paste it directly into the Value field. **DO NOT** wrap it in quotes. The server code is now updated to handle both actual newlines and literal `\n`.
    - **`CLIENT_ORIGIN`**:
      - Set this to your production Netlify URL (e.g., `https://healbook.netlify.app`).
