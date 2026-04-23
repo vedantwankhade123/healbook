@@ -20,14 +20,20 @@ Session rules:
 - For booking, cancelling, or editing data, the patient must be logged in; tools will enforce this.
 
 Booking and payments:
-- After book_appointment succeeds, clearly say the slot is held but payment is required to confirm. Tell them they can tap **Pay now** on the payment card shown in this chat (they do not need to open Appointments unless they prefer).
-- If the user asks to pay, confirm payment, or "I've paid", call pay_appointment_fee with the correct appointmentId from list_my_appointments or the recent booking result.
+- After book_appointment succeeds, clearly say the slot is held but payment is required to confirm. Tell them they can tap **Pay now** on the payment card shown in this chat.
+- If the user asks to pay, confirm payment, or "I've paid", call pay_appointment_fee with the correct appointmentId.
+
+Visual Excellence and Redundancy:
+- The platform automatically generates beautiful UI cards for Doctors, Hospitals, and Appointments when tools are called.
+- DO NOT repeat the details of these items (fees, ratings, addresses, experience) in your text response. 
+- Keep your text response brief and conversational, pointing the user to the cards below.
+- You have access to maps! Use **get_map_route** to help patients find the clinic and see the best route via OpenStreetMap. Mention that you've provided a map link for them.
 
 Medical safety:
 - Do not give a definitive diagnosis. Advise urgent care for emergencies.
 - Be concise, warm, and clear (bullets). Prefer actionable next steps.
 
-After tools return, summarize results for the user in natural language. If a tool errors, explain briefly and suggest what they can do next.
+After tools return, summarize the status briefly in natural language. If a tool errors, explain briefly and suggest what they can do next.
 `;
 
 export type PrakritiPaymentPrompt = {
@@ -42,7 +48,42 @@ export type PrakritiPaymentPrompt = {
 export type PrakritiAgentReply = {
   text: string;
   paymentPrompts?: PrakritiPaymentPrompt[];
+  uiCards?: PrakritiUiCard[];
 };
+
+export type PrakritiUiCard =
+  | {
+      kind: "doctor";
+      id: string;
+      name: string;
+      specialization?: string;
+      hospitalOrClinic?: string;
+      fee?: number;
+      rating?: number;
+    }
+  | {
+      kind: "hospital";
+      id: string;
+      name: string;
+      location?: string;
+    }
+  | {
+      kind: "appointment";
+      id: string;
+      doctorName?: string;
+      date?: string;
+      time?: string;
+      status?: string;
+      paymentStatus?: string;
+      fee?: number;
+    }
+  | {
+      kind: "status";
+      id: string;
+      title: string;
+      value: string;
+      tone?: "neutral" | "success" | "warning";
+    };
 
 function mergePaymentPrompts(acc: PrakritiPaymentPrompt[], more: PrakritiPaymentPrompt[]) {
   const seen = new Set(acc.map((p) => p.appointmentId));
@@ -50,6 +91,17 @@ function mergePaymentPrompts(acc: PrakritiPaymentPrompt[], more: PrakritiPayment
     if (p.appointmentId && !seen.has(p.appointmentId)) {
       acc.push(p);
       seen.add(p.appointmentId);
+    }
+  }
+}
+
+function mergeUiCards(acc: PrakritiUiCard[], more: PrakritiUiCard[]) {
+  const seen = new Set(acc.map((c) => `${c.kind}:${c.id}`));
+  for (const c of more) {
+    const key = `${c.kind}:${c.id}`;
+    if (!seen.has(key)) {
+      acc.push(c);
+      seen.add(key);
     }
   }
 }
@@ -83,6 +135,146 @@ function paymentPromptsFromToolResult(
       }))
       .filter((p) => p.appointmentId);
   }
+  return [];
+}
+
+function uiCardsFromToolResult(name: string, out: Record<string, unknown>): PrakritiUiCard[] {
+  if (name === "search_doctors" && Array.isArray(out.doctors)) {
+    return (out.doctors as Record<string, unknown>[])
+      .slice(0, 6)
+      .flatMap((d) => {
+        const cards: PrakritiUiCard[] = [
+          {
+            kind: "doctor",
+            id: String(d.id ?? d.userId ?? d.name ?? Math.random()),
+            name: String(d.name ?? "Doctor"),
+            specialization: d.specialization ? String(d.specialization) : undefined,
+            hospitalOrClinic: d.clinicName ? String(d.clinicName) : undefined,
+            fee: d.consultationFee !== undefined ? Number(d.consultationFee) : undefined,
+            rating: d.rating !== undefined ? Number(d.rating) : undefined,
+          },
+        ];
+        if (d.clinicName) {
+          cards.push({
+            kind: "hospital",
+            id: `clinic-${String(d.id ?? d.clinicName)}`,
+            name: String(d.clinicName),
+          });
+        }
+        return cards;
+      });
+  }
+
+  if (name === "suggest_doctors_for_concern" && Array.isArray(out.suggestions)) {
+    return (out.suggestions as Record<string, unknown>[])
+      .slice(0, 6)
+      .map((d) => ({
+        kind: "doctor" as const,
+        id: String(d.id ?? d.name ?? Math.random()),
+        name: String(d.name ?? "Doctor"),
+        specialization: d.specialization ? String(d.specialization) : undefined,
+        hospitalOrClinic: d.clinicName ? String(d.clinicName) : undefined,
+        fee: d.consultationFee !== undefined ? Number(d.consultationFee) : undefined,
+        rating: d.rating !== undefined ? Number(d.rating) : undefined,
+      }));
+  }
+
+  if (name === "get_doctor" && out.id) {
+    const cards: PrakritiUiCard[] = [
+      {
+        kind: "doctor",
+        id: String(out.id),
+        name: String(out.name ?? "Doctor"),
+        specialization: out.specialization ? String(out.specialization) : undefined,
+        hospitalOrClinic: out.clinicName ? String(out.clinicName) : undefined,
+        fee: out.consultationFee !== undefined ? Number(out.consultationFee) : undefined,
+        rating: out.rating !== undefined ? Number(out.rating) : undefined,
+      },
+    ];
+    if (out.clinicName) {
+      cards.push({
+        kind: "hospital",
+        id: `clinic-${String(out.id)}`,
+        name: String(out.clinicName),
+      });
+    }
+    return cards;
+  }
+
+  if (name === "list_my_appointments" && Array.isArray(out.appointments)) {
+    return (out.appointments as Record<string, unknown>[])
+      .slice(0, 8)
+      .map((a) => ({
+        kind: "appointment" as const,
+        id: String(a.id ?? Math.random()),
+        doctorName: a.doctorName ? String(a.doctorName) : undefined,
+        date: a.date ? String(a.date) : undefined,
+        time: a.time ? String(a.time) : undefined,
+        status: a.status ? String(a.status) : undefined,
+        paymentStatus: a.paymentStatus ? String(a.paymentStatus) : undefined,
+        fee: a.fee !== undefined ? Number(a.fee) : undefined,
+      }));
+  }
+
+  if (name === "book_appointment" && out.success && out.appointmentId) {
+    return [
+      {
+        kind: "appointment",
+        id: String(out.appointmentId),
+        doctorName: out.doctorName ? String(out.doctorName) : undefined,
+        date: out.date ? String(out.date) : undefined,
+        time: out.time ? String(out.time) : undefined,
+        status: "pending",
+        paymentStatus: out.paymentStatus ? String(out.paymentStatus) : "pending",
+        fee: out.fee !== undefined ? Number(out.fee) : undefined,
+      },
+    ];
+  }
+
+  if (name === "pay_appointment_fee" && out.success && out.appointmentId) {
+    return [
+      {
+        kind: "status",
+        id: `pay-${String(out.appointmentId)}`,
+        title: "Payment status",
+        value: "Paid and confirmed",
+        tone: "success",
+      },
+    ];
+  }
+
+  if (name === "cancel_appointment" && out.success) {
+    return [
+      {
+        kind: "status",
+        id: `cancel-${Date.now()}`,
+        title: "Appointment status",
+        value: "Cancelled",
+        tone: "warning",
+      },
+    ];
+  }
+
+  if (name === "reschedule_appointment" && out.success) {
+    return [
+      {
+        kind: "status",
+        id: `reschedule-${Date.now()}`,
+        title: "Appointment status",
+        value: String(out.message ?? "Rescheduled"),
+        tone: "neutral",
+      },
+    ];
+  }
+
+  if (name === "get_system_stats" && !out.error) {
+    return [
+      { kind: "status", id: "stats-users", title: "Users", value: String(out.totalUsers ?? 0) },
+      { kind: "status", id: "stats-doctors", title: "Doctors", value: String(out.totalDoctors ?? 0) },
+      { kind: "status", id: "stats-appointments", title: "Appointments", value: String(out.totalAppointments ?? 0) },
+    ];
+  }
+
   return [];
 }
 
@@ -243,6 +435,18 @@ function toolDeclarations(): FunctionDeclaration[] {
       name: "get_system_stats",
       description: "Platform-wide counts: users, doctors, appointments, reviews, payments.",
       parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
+      name: "get_map_route",
+      description: "Generates an OpenStreetMap search and directions link for a doctor's clinic or hospital.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          destinationName: { type: SchemaType.STRING, description: "The clinic or hospital name." },
+          address: { type: SchemaType.STRING, description: "The physical address of the facility." },
+        },
+        required: ["destinationName"],
+      },
     },
   ];
 }
@@ -550,6 +754,18 @@ export async function executePrakritiTool(
         return { error: String(e) };
       }
     }
+    case "get_map_route": {
+      const dest = String(args.destinationName || "");
+      const addr = String(args.address || "");
+      const query = encodeURIComponent(`${dest}${addr ? ", " + addr : ""}`);
+      return {
+        success: true,
+        destination: dest,
+        searchUrl: `https://www.openstreetmap.org/search?query=${query}`,
+        directionsUrl: `https://www.openstreetmap.org/directions?engine=osrm_car&route=%3B${query}`,
+        note: "Patients can click these links to see the location and get the best route via OpenStreetMap.",
+      };
+    }
     default:
       return { error: `Unknown tool ${name}` };
   }
@@ -560,6 +776,7 @@ export async function runPrakritiAgent(
   db: Firestore,
   messages: ChatTurn[],
   sessionUid: string | undefined,
+  language?: string,
 ): Promise<PrakritiAgentReply> {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser?.text) throw new Error("No user message");
@@ -578,7 +795,18 @@ export async function runPrakritiAgent(
     sessionBlock = "User is NOT logged in. Tools that require login will return errors.";
   }
 
-  const systemInstruction = `${AGENT_SYSTEM}\n\n${sessionBlock}`;
+  let systemInstruction = `${AGENT_SYSTEM}\n\n${sessionBlock}`;
+
+  if (language) {
+    const langMap: Record<string, string> = {
+      "hi-IN": "Hindi",
+      "mr-IN": "Marathi",
+      "ta-IN": "Tamil",
+      "en-IN": "English",
+    };
+    const langName = langMap[language] || language;
+    systemInstruction += `\nIMPORTANT: The user prefers ${langName}. You MUST respond to the user in ${langName} while keeping the medical advice accurate and tool outputs clear. If tool results are in English, translate the summary for the user into ${langName}.`;
+  }
 
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -598,6 +826,7 @@ export async function runPrakritiAgent(
 
   let result = await chat.sendMessage(lastUser.text);
   const paymentPrompts: PrakritiPaymentPrompt[] = [];
+  const uiCards: PrakritiUiCard[] = [];
   const paidThisTurn = new Set<string>();
 
   for (let step = 0; step < 24; step++) {
@@ -605,15 +834,18 @@ export async function runPrakritiAgent(
     if (!calls?.length) {
       const text = result.response.text();
       const prompts = paymentPrompts.filter((p) => !paidThisTurn.has(p.appointmentId));
+      const cards = uiCards;
       if (!text?.trim()) {
         return {
           text: "I could not produce a reply. Please try again or rephrase your question.",
           paymentPrompts: prompts.length ? prompts : undefined,
+          uiCards: cards.length ? cards : undefined,
         };
       }
       return {
         text,
         paymentPrompts: prompts.length ? prompts : undefined,
+        uiCards: cards.length ? cards : undefined,
       };
     }
 
@@ -627,6 +859,7 @@ export async function runPrakritiAgent(
           userRole,
         );
         mergePaymentPrompts(paymentPrompts, paymentPromptsFromToolResult(call.name, out as Record<string, unknown>));
+        mergeUiCards(uiCards, uiCardsFromToolResult(call.name, out as Record<string, unknown>));
         if (call.name === "pay_appointment_fee" && (out as { success?: boolean }).success && (out as { appointmentId?: string }).appointmentId) {
           paidThisTurn.add(String((out as { appointmentId: string }).appointmentId));
         }
@@ -646,5 +879,6 @@ export async function runPrakritiAgent(
   return {
     text: "Too many tool steps. Please narrow your request.",
     paymentPrompts: prompts.length ? prompts : undefined,
+    uiCards: uiCards.length ? uiCards : undefined,
   };
 }

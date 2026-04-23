@@ -10,6 +10,7 @@ import { runPrakritiAgent } from "./prakritiAgent.js";
 import { generateExtendedDataset } from "./data/doctors-seed.js";
 import { confirmAppointmentPayment } from "./lib/confirmAppointmentPayment.js";
 import { createUserNotification } from "./lib/notifications.js";
+import { z } from "zod";
 
 /** Lazy-load Gemini AI to prevent initialization crashes during module load. */
 function getGenAI() {
@@ -775,20 +776,138 @@ export function createApiRouter(): Router {
       const body = req.body as {
         messages?: { role: "user" | "assistant"; text: string }[];
         userId?: string;
+        language?: string;
       };
       const messages = body.messages || [];
+      const language = body.language;
       const sessionUid = req.uid;
 
       if (!messages.length) {
         return res.status(400).json({ error: "No messages" });
       }
 
-      const reply = await runPrakritiAgent(getGenAI(), adminDb, messages, sessionUid);
+      const reply = await runPrakritiAgent(getGenAI(), adminDb, messages, sessionUid, language);
       res.json(reply);
     } catch (error: unknown) {
       console.error("Prakriti agent error:", error);
       const msg = error instanceof Error ? error.message : "Chat failed";
       res.status(500).json({ error: msg });
+    }
+  });
+
+  /**
+   * Text-to-speech for Prakriti Speak Mode.
+   * Uses Gemini REST API to request AUDIO modality. If the deployment/key
+   * does not support audio, this will return a 501 so the client can fallback.
+   */
+  router.post("/tts", optionalAuth, async (req: AuthedRequest, res) => {
+    const bodySchema = z.object({
+      text: z.string().min(1).max(4000),
+      languageCode: z.string().optional(), // e.g. "hi-IN"
+      voiceName: z.string().optional(), // e.g. "Puck" / "Kore"
+    });
+
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request body" });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY || "";
+    if (!apiKey) {
+      return res.status(501).json({ error: "TTS not configured" });
+    }
+
+    const { text, languageCode, voiceName } = parsed.data;
+
+    // Use a dedicated Gemini TTS model. Standard chat models are text-only.
+    const model = process.env.GEMINI_TTS_MODEL || "gemini-3.1-flash-tts-preview";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    const payload: Record<string, unknown> = {
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+      },
+    };
+
+    // Best-effort speechConfig; some deployments may ignore unsupported fields.
+    const speechConfig: Record<string, unknown> = {};
+    if (languageCode) speechConfig.languageCode = languageCode;
+    if (voiceName) {
+      speechConfig.voiceConfig = {
+        prebuiltVoiceConfig: { voiceName },
+      };
+    }
+    if (Object.keys(speechConfig).length) {
+      payload.generationConfig = {
+        ...(payload.generationConfig as object),
+        speechConfig,
+      };
+    }
+
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = (await r.json().catch(() => ({}))) as any;
+      if (!r.ok) {
+        const msg = json?.error?.message || json?.error || "TTS request failed";
+        // Only map true "unsupported" responses to 501; keep transient errors as-is.
+        const isUnsupported =
+          r.status === 400 ||
+          r.status === 404 ||
+          /only supports text output|response modalities|not supported|unknown field/i.test(String(msg));
+        const status = isUnsupported ? 501 : r.status;
+        return res.status(status).json({ error: msg, model });
+      }
+
+      const part = json?.candidates?.[0]?.content?.parts?.[0];
+      const audioB64 = part?.inlineData?.data;
+      const mimeType = part?.inlineData?.mimeType || "audio/wav";
+
+      if (!audioB64) {
+        return res.status(501).json({ error: "Audio response not available for this model/key", model });
+      }
+
+      // Gemini TTS commonly returns raw 16-bit PCM (audio/l16; rate=24000; channels=1).
+      // Browsers can't reliably play raw PCM, so we wrap it into a WAV container.
+      if (typeof mimeType === "string" && mimeType.toLowerCase().startsWith("audio/l16")) {
+        const rateMatch = /rate=(\d+)/i.exec(mimeType);
+        const chMatch = /channels=(\d+)/i.exec(mimeType);
+        const sampleRate = rateMatch ? Number(rateMatch[1]) : 24000;
+        const channels = chMatch ? Number(chMatch[1]) : 1;
+
+        const pcm = Buffer.from(audioB64, "base64");
+        const bytesPerSample = 2; // 16-bit
+        const blockAlign = channels * bytesPerSample;
+        const byteRate = sampleRate * blockAlign;
+
+        const header = Buffer.alloc(44);
+        header.write("RIFF", 0);
+        header.writeUInt32LE(36 + pcm.length, 4);
+        header.write("WAVE", 8);
+        header.write("fmt ", 12);
+        header.writeUInt32LE(16, 16); // PCM header size
+        header.writeUInt16LE(1, 20); // audio format = PCM
+        header.writeUInt16LE(channels, 22);
+        header.writeUInt32LE(sampleRate, 24);
+        header.writeUInt32LE(byteRate, 28);
+        header.writeUInt16LE(blockAlign, 32);
+        header.writeUInt16LE(16, 34); // bits per sample
+        header.write("data", 36);
+        header.writeUInt32LE(pcm.length, 40);
+
+        const wav = Buffer.concat([header, pcm]);
+        return res.json({ audioBase64: wav.toString("base64"), mimeType: "audio/wav" });
+      }
+
+      return res.json({ audioBase64: audioB64, mimeType });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "TTS request failed";
+      return res.status(500).json({ error: msg, model });
     }
   });
 
