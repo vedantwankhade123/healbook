@@ -26,6 +26,43 @@ export const hospitalProfiles: Partial<FacilitySeed>[] = [
 
 const generateDoctors = () => {
   const doctors: Partial<DoctorSeed>[] = [];
+  
+  // --- CORE VISIBLE DATA (For Client Reference) ---
+  const coreDoctors: Partial<DoctorSeed>[] = [
+    {
+        name: "Dr. Ananya Sharma",
+        email: "ananya.sharma@healbook.in",
+        specialization: "General Physician",
+        experience: 12,
+        clinicName: "Prana Health Center, Delhi",
+        facilityId: "hosp_city_delhi",
+        consultationFee: 500,
+        bio: "Expert in primary care, chronic disease management, and viral infections.",
+        education: "MBBS, MD (General Medicine) - AIIMS Delhi",
+        languages: ["English", "Hindi"],
+        rating: 4.9,
+        isAvailable: true,
+        treats: ["Fever", "Cough", "Headache", "Infections", "Diabetes"],
+        profilePhoto: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?q=80&w=1974&auto=format&fit=crop",
+    },
+    {
+        name: "Dr. Rahul Malhotra",
+        email: "rahul.malhotra@healbook.in",
+        specialization: "General Physician",
+        experience: 10,
+        clinicName: "City Well Clinic, Mumbai",
+        facilityId: "hosp_mumbai_mind",
+        consultationFee: 600,
+        bio: "Experienced family physician specializing in seasonal flu and respiratory issues.",
+        education: "MBBS, MD - Grant Medical College, Mumbai",
+        languages: ["English", "Hindi", "Marathi"],
+        rating: 4.8,
+        isAvailable: true,
+        treats: ["Viral Fever", "Acidity", "Migraine", "Cold & Flu"],
+        profilePhoto: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?q=80&w=2070&auto=format&fit=crop",
+    }
+  ];
+
   const specializations = [
     { spec: "General Physician", symptoms: ["Fever", "Cough", "Cold", "Flu", "Infection", "Headache", "Body Ache", "Weakness", "Viral Fever"] },
     { spec: "Pediatrician", symptoms: ["Child Fever", "Child Cough", "Vaccination", "Newborn Care", "Growth Monitoring", "Childhood Illness"] },
@@ -43,9 +80,7 @@ const generateDoctors = () => {
   const names = ["Sharma", "Gupta", "Verma", "Singh", "Malhotra", "Kapoor", "Jain", "Reddy", "Nair", "Patil", "Deshmukh", "Kulkarni", "Mehta", "Bansal", "Shah", "Iyer", "Pillai", "Yadav", "Bajaj", "Ghone", "Pawar", "Kadam", "Rao", "Jha", "Mishra", "Trivedi", "Pandey", "Chauhan", "Agarwal", "Saxena", "Srivastava", "Desai", "Merchant", "Parekh", "Adwani", "Chandak", "Bhutada", "Vaidya", "Rathi", "Lanjewar"];
   const firstNames = ["Dr. Amit", "Dr. Neha", "Dr. Rahul", "Dr. Anjali", "Dr. Vikram", "Dr. Priya", "Dr. Sanjay", "Dr. Meera", "Dr. Arvind", "Dr. Shweta", "Dr. Rajesh", "Dr. Kavita", "Dr. Nitin", "Dr. Snehal", "Dr. Ashish", "Dr. Vaishali", "Dr. Sameer", "Dr. Tanuja", "Dr. Manish", "Dr. Prerna", "Dr. Harpreet", "Dr. Aruna", "Dr. Kailash", "Dr. Varsha", "Dr. Prashant", "Dr. Shailesh", "Dr. Deepali", "Dr. Girish", "Dr. Vinay", "Dr. Shubhada", "Dr. Ajay", "Dr. Leena", "Dr. Abhishek", "Dr. Monica", "Dr. Sandeep", "Dr. Niharika", "Dr. Pallavi", "Dr. Swati", "Dr. Dev", "Dr. Anita"];
 
-  let idCounter = 1;
   specializations.forEach((s, sIdx) => {
-    // Deterministic generation: use indexes instead of Math.random()
     for (let i = 0; i < 22; i++) {
       const city = cities[(sIdx + i) % cities.length];
       const firstName = firstNames[(sIdx * 5 + i) % firstNames.length];
@@ -54,7 +89,6 @@ const generateDoctors = () => {
       
       doctors.push({
         name: fullName,
-        // Deterministic email based on specialization and index
         email: `${s.spec.toLowerCase().replace(/\s+/g, "")}_${i}@healbook.test`,
         specialization: s.spec,
         experience: 5 + (i % 20),
@@ -71,7 +105,7 @@ const generateDoctors = () => {
     }
   });
 
-  return doctors;
+  return [...coreDoctors, ...doctors];
 };
 
 export const doctorProfiles = generateDoctors();
