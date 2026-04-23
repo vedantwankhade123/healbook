@@ -1,15 +1,17 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { collection, query, where, orderBy, getDocs, updateDoc, doc, documentId } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, updateDoc, doc, documentId, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
-import { Appointment } from "@/types";
+import { Appointment, Doctor } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
+import { PrescriptionModal } from "@/components/dashboard/PrescriptionModal";
+import { ViewPrescriptionModal } from "@/components/dashboard/ViewPrescriptionModal";
 import { useToast } from "@/context/ToastContext";
 import { format, parse, isAfter } from "date-fns";
 
@@ -57,6 +59,10 @@ export default function AppointmentManagementPage() {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedAppointmentForPrescription, setSelectedAppointmentForPrescription] = useState<Appointment | null>(null);
+  const [selectedAppointmentForView, setSelectedAppointmentForView] = useState<string | null>(null);
+  const [prescriptionsExist, setPrescriptionsExist] = useState<Set<string>>(new Set());
+  const [doctorProfile, setDoctorProfile] = useState<Doctor | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   useEffect(() => {
@@ -76,7 +82,10 @@ export default function AppointmentManagementPage() {
           return;
         }
 
-        const clinicalDoctorId = doctorSnapshot.docs[0].id;
+        const dDoc = doctorSnapshot.docs[0];
+        const dData = { id: dDoc.id, ...dDoc.data() } as Doctor;
+        setDoctorProfile(dData);
+        const clinicalDoctorId = dDoc.id;
 
         // 2. Fetch appointments using mapped ID
         const q = query(
@@ -108,6 +117,21 @@ export default function AppointmentManagementPage() {
           }
           setPatientPhotos(photos);
         }
+
+        // 4. Check for existing prescriptions
+        const appointmentIds = data.map(a => a.id).filter(Boolean);
+        if (appointmentIds.length > 0) {
+          const existingSet = new Set<string>();
+          for (let i = 0; i < appointmentIds.length; i += 30) {
+            const chunk = appointmentIds.slice(i, i + 30);
+            const presSnap = await getDocs(query(
+              collection(db, "prescriptions"),
+              where(documentId(), "in", chunk)
+            ));
+            presSnap.docs.forEach(d => existingSet.add(d.id));
+          }
+          setPrescriptionsExist(existingSet);
+        }
       } catch (error) {
         console.error("Error fetching appointments:", error);
       } finally {
@@ -132,6 +156,37 @@ export default function AppointmentManagementPage() {
     } finally {
       setIsActionLoading(false);
       setIsCancelModalOpen(false);
+    }
+  };
+
+  const handlePrescriptionSubmit = async (data: { notes: string; medicines: any[] }) => {
+    if (!selectedAppointmentForPrescription || !doctorProfile) return;
+    
+    try {
+      await setDoc(doc(db, "prescriptions", selectedAppointmentForPrescription.id), {
+        appointmentId: selectedAppointmentForPrescription.id,
+        patientId: selectedAppointmentForPrescription.patientId,
+        doctorId: doctorProfile.id,
+        doctorName: doctorProfile.name,
+        clinicName: doctorProfile.clinicName,
+        date: format(new Date(), "yyyy-MM-dd"),
+        notes: data.notes,
+        medicines: data.medicines,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      if (selectedAppointmentForPrescription.status !== "completed") {
+        await updateStatus(selectedAppointmentForPrescription.id!, "completed");
+      } else {
+        success("Prescription updated successfully");
+      }
+      
+      
+      setPrescriptionsExist(prev => new Set([...prev, selectedAppointmentForPrescription.id]));
+      setSelectedAppointmentForPrescription(null);
+    } catch (err: any) {
+      toastError("Failed to save prescription: " + err.message);
+      throw err;
     }
   };
 
@@ -204,9 +259,9 @@ export default function AppointmentManagementPage() {
           [1, 2, 3].map(i => <div key={i} className="h-40 bg-slate-50 animate-pulse rounded-[2.5rem]" />)
         ) : filteredAppointments.length > 0 ? (
           filteredAppointments.map((apt) => (
-            <Card key={apt.id} variant="outline" className="p-0 bg-gradient-to-br from-white via-white to-primary/10 border-slate-100 hover:border-primary/20 transition-all rounded-2xl sm:rounded-[3rem] flex flex-col md:flex-row items-stretch overflow-hidden group shadow-sm hover:shadow-xl hover:-translate-y-1 duration-300">
+            <Card key={apt.id} variant="outline" className="p-0 bg-gradient-to-br from-white via-white to-primary/10 border-slate-100 hover:border-primary/20 transition-all rounded-2xl md:rounded-[3rem] flex flex-col md:flex-row items-stretch overflow-hidden group shadow-sm hover:shadow-xl hover:-translate-y-1 duration-300">
               {/* Left - Portrait Sidebar (Consistent with Patients/Records) */}
-              <div className="w-full md:w-48 min-h-[120px] md:min-h-0 bg-sky-50 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-100/80 transition-colors py-4 md:py-8">
+              <div className="w-full md:w-48 min-h-[120px] md:min-h-0 bg-sky-50 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-100/80 transition-colors py-6 md:py-8">
                 <div className="w-20 h-20 md:w-28 md:h-28 rounded-full bg-white shadow-2xl border-4 md:border-[6px] border-white overflow-hidden group-hover:scale-105 transition-transform flex items-center justify-center relative">
                     {patientPhotos[apt.patientId] ? (
                         <img src={patientPhotos[apt.patientId]} alt={apt.patientName} className="w-full h-full object-cover" />
@@ -293,17 +348,49 @@ export default function AppointmentManagementPage() {
                             <p className="text-sm font-bold text-slate-700 capitalize">{apt.visitType}</p>
                         </div>
                     </div>
-                    {filter === "upcoming" && (
-                        <div className="w-full md:w-auto md:ml-auto pt-2 md:pt-0">
+                    {filter === "upcoming" ? (
+                        <div className="w-full md:w-auto md:ml-auto pt-4 md:pt-0">
                             <Button 
                                 variant="primary" 
-                                onClick={() => updateStatus(apt.id!, "completed")}
-                                className="h-11 md:h-12 w-full md:w-auto px-6 md:px-8 rounded-2xl shadow-lg shadow-primary/20 font-bold text-xs tracking-widest uppercase"
+                                onClick={() => setSelectedAppointmentForPrescription(apt)}
+                                className="h-12 w-full md:w-auto px-8 rounded-2xl shadow-lg shadow-primary/20 font-bold text-xs tracking-widest uppercase"
                             >
                                 Mark completed
                             </Button>
                         </div>
-                    )}
+                    ) : apt.status === "completed" ? (
+                        <div className="w-full md:w-auto md:ml-auto pt-4 md:pt-0 flex flex-col sm:flex-row gap-2">
+                             {prescriptionsExist.has(apt.id) ? (
+                               <>
+                                 <Button 
+                                    variant="outline" 
+                                    onClick={() => setSelectedAppointmentForView(apt.id)}
+                                    className="h-12 w-full md:w-auto px-8 rounded-2xl border-primary/20 text-primary hover:bg-primary/5 font-bold text-xs tracking-widest uppercase flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-lg">visibility</span>
+                                    View
+                                </Button>
+                                <Button 
+                                    variant="ghost" 
+                                    onClick={() => setSelectedAppointmentForPrescription(apt)}
+                                    className="h-12 w-full md:w-auto px-8 rounded-2xl text-slate-500 hover:bg-slate-100 font-bold text-xs tracking-widest uppercase flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-lg">edit</span>
+                                    Edit
+                                </Button>
+                               </>
+                             ) : (
+                                <Button 
+                                    variant="outline" 
+                                    onClick={() => setSelectedAppointmentForPrescription(apt)}
+                                    className="h-12 w-full md:w-auto px-8 rounded-2xl border-primary/20 text-primary hover:bg-primary/5 font-bold text-xs tracking-widest uppercase flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-lg">edit_note</span>
+                                    Prescription
+                                </Button>
+                             )}
+                        </div>
+                    ) : null}
                 </div>
               </div>
             </Card>
@@ -334,6 +421,22 @@ export default function AppointmentManagementPage() {
         onConfirm={handleReschedule}
         appointment={selectedAppointment}
         isLoading={isActionLoading}
+      />
+
+      {selectedAppointmentForPrescription && doctorProfile && (
+        <PrescriptionModal
+            isOpen={!!selectedAppointmentForPrescription}
+            onClose={() => setSelectedAppointmentForPrescription(null)}
+            appointment={selectedAppointmentForPrescription}
+            doctor={doctorProfile}
+            onSubmit={handlePrescriptionSubmit}
+        />
+      )}
+
+      <ViewPrescriptionModal
+        isOpen={!!selectedAppointmentForView}
+        onClose={() => setSelectedAppointmentForView(null)}
+        appointmentId={selectedAppointmentForView || ""}
       />
     </div>
   );

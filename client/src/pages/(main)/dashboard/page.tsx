@@ -12,7 +12,10 @@ import { useNotifications } from "@/context/NotificationContext";
 import { NotificationHub } from "@/components/notifications/NotificationHub";
 import { apiJson } from "@/lib/api";
 import { Doctor } from "@/types";
+import { ViewPrescriptionModal } from "@/components/dashboard/ViewPrescriptionModal";
 import { parse, isAfter } from "date-fns";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs, documentId } from "firebase/firestore";
 
 const symptoms = [
   { name: "Fever", icon: "device_thermostat" },
@@ -41,6 +44,8 @@ export default function PatientDashboard() {
   const [isSymptomDropdownOpen, setIsSymptomDropdownOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const { unreadCount } = useNotifications();
+  const [selectedPrescriptionId, setSelectedPrescriptionId] = useState<string | null>(null);
+  const [prescriptionsExist, setPrescriptionsExist] = useState<Set<string>>(new Set());
   const symptomDropdownRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,6 +84,18 @@ export default function PatientDashboard() {
         });
         setAppointments(sorted.slice(0, 1));
         setStats(statData);
+
+        // 4. Check for existing prescriptions for the shown appointments
+        const appointmentIds = sorted.slice(0, 1).map(a => a.id).filter(Boolean);
+        if (appointmentIds.length > 0) {
+          const existingSet = new Set<string>();
+          const presSnap = await getDocs(query(
+            collection(db, "prescriptions"),
+            where(documentId(), "in", appointmentIds)
+          ));
+          presSnap.docs.forEach(d => existingSet.add(d.id));
+          setPrescriptionsExist(existingSet);
+        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
@@ -232,9 +249,21 @@ export default function PatientDashboard() {
                           </div>
                       </div>
                   </div>
-                  <div className="p-4 grid grid-cols-2 gap-2">
-                      <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-wider" size="sm" onClick={() => navigate('/appointments')}>Reschedule</Button>
-                      <Button variant="primary" className="w-full text-[10px] font-black uppercase tracking-wider shadow-none" size="sm" onClick={() => navigate('/appointments')}>Details</Button>
+                  <div className="p-4 flex flex-col gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button variant="ghost" className="w-full text-[10px] font-black uppercase tracking-wider" size="sm" onClick={() => navigate('/appointments')}>Reschedule</Button>
+                        <Button variant="primary" className="w-full text-[10px] font-black uppercase tracking-wider shadow-none" size="sm" onClick={() => navigate('/appointments')}>Details</Button>
+                      </div>
+                      {prescriptionsExist.has(appt.id) && (
+                        <Button 
+                          variant="outline" 
+                          className="w-full text-[10px] font-black uppercase tracking-wider border-primary/20 text-primary hover:bg-primary/5 mt-1" 
+                          size="sm" 
+                          onClick={() => setSelectedPrescriptionId(appt.id)}
+                        >
+                          View Prescription
+                        </Button>
+                      )}
                   </div>
                 </Card>
               );
@@ -285,6 +314,12 @@ export default function PatientDashboard() {
         </div>
       </section>
 
+
+      <ViewPrescriptionModal 
+        isOpen={!!selectedPrescriptionId}
+        onClose={() => setSelectedPrescriptionId(null)}
+        appointmentId={selectedPrescriptionId || ""}
+      />
     </div>
   );
 }

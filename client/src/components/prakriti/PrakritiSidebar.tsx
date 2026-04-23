@@ -219,9 +219,14 @@ const PrakritiChatContent = ({
     if (!isOpen) return;
     setMessages((prev) => {
       if (prev.length > 0) return prev;
-      const welcomeText = user?.uid
-        ? `Namaste ${user.name || "friend"}! I am Prakriti. I can find doctors, book visits, collect the consultation fee right here in chat, and help with your records. What would you like to do?`
-        : "Namaste! I am Prakriti. Sign in to let me book appointments and access your HealBook data. I can still answer general health questions.";
+      let welcomeText = "";
+      if (!user?.uid) {
+        welcomeText = "Namaste! I am Prakriti. Sign in to let me book appointments and access your HealBook data. I can still answer general health questions.";
+      } else if ((user as any).role === "doctor") {
+        welcomeText = `Namaste Dr. ${user.name || "Specialist"}! I am Prakriti, your AI clinical assistant. I can help you manage your schedule, look up patient medical history, and help with your clinic records. How can I assist you today?`;
+      } else {
+        welcomeText = `Namaste ${user.name || "friend"}! I am Prakriti. I can find doctors, book visits, collect the consultation fee right here in chat, and help with your records. What would you like to do?`;
+      }
       return [{ id: "welcome", role: "assistant", text: welcomeText }];
     });
   }, [isOpen, user?.uid, user?.name]);

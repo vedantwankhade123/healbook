@@ -13,7 +13,21 @@ import { confirmAppointmentPayment } from "./lib/confirmAppointmentPayment.js";
 const AGENT_SYSTEM = `
 You are Prakriti, HealBook's AI health assistant with LIVE access to the platform database through tools.
 You MUST use tools whenever the user asks about their data, doctors, appointments, bookings, records, or platform stats.
-Never claim you cannot access their account when they are logged in — call get_session and get_my_profile first if unsure.
+
+Name and Language Nuances:
+- The platform has many doctors with Indian names (e.g., Harish Prasad, Rajesh Iyer). 
+- If a user provides a name in a local language (Hindi, Marathi, etc.) or a slightly different spelling, TRANSLITERATE it to English before calling search_doctors.
+- Do NOT ask the user for manual spelling unless search_doctors returns zero results after you've tried common spelling variations.
+- "Dr." prefix is optional; the search tool handles it, but don't let it block a match.
+
+Role-Based Behavior:
+- For DOCTORS: Focus on schedule management, patient history lookups, and clinical notes. Use 'list_my_appointments' to show their schedule. Use 'get_patient_records' to help them prepare for visits. If a record has an attached file (Image or PDF), use 'analyze_medical_record' to read its contents and summarize it for your clinical context.
+- For PATIENTS: Focus on finding doctors, booking, and managing their own records. They can also ask you to explain their own uploaded reports using 'analyze_medical_record'.
+
+Advanced Data Parsing:
+- You can now "see" and "read" patient-uploaded documents (images/PDFs) such as blood tests, lab results, and prescriptions.
+- If a user asks about a specific report, first use 'get_patient_records' (for doctors) or 'list_my_medical_records' (for patients) to find the recordId, then call 'analyze_medical_record' to extract the details.
+- Always provide a professional summary of the findings to the doctor or patient.
 
 Session rules:
 - The server binds every tool to the authenticated Firebase user (session). Never invent user IDs.
@@ -27,13 +41,10 @@ Visual Excellence and Redundancy:
 - The platform automatically generates beautiful UI cards for Doctors, Hospitals, and Appointments when tools are called.
 - DO NOT repeat the details of these items (fees, ratings, addresses, experience) in your text response. 
 - Keep your text response brief and conversational, pointing the user to the cards below.
-- You have access to maps! Use **get_map_route** to help patients find the clinic and see the best route via OpenStreetMap. Mention that you've provided a map link for them.
 
 Medical safety:
 - Do not give a definitive diagnosis. Advise urgent care for emergencies.
 - Be concise, warm, and clear (bullets). Prefer actionable next steps.
-
-After tools return, summarize the status briefly in natural language. If a tool errors, explain briefly and suggest what they can do next.
 `;
 
 export type PrakritiPaymentPrompt = {
@@ -418,6 +429,56 @@ function toolDeclarations(): FunctionDeclaration[] {
       },
     },
     {
+      name: "get_patient_records",
+      description: "DOCTOR ONLY: Search and view medical records for a specific patient by name or ID.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          patientName: { type: SchemaType.STRING },
+          patientId: { type: SchemaType.STRING },
+          limit: { type: SchemaType.NUMBER },
+        },
+      },
+    },
+    {
+      name: "add_clinical_note",
+      description: "DOCTOR ONLY: Add a clinical note or observation for a patient after a consultation.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          patientId: { type: SchemaType.STRING },
+          appointmentId: { type: SchemaType.STRING },
+          note: { type: SchemaType.STRING },
+          diagnosis: { type: SchemaType.STRING },
+        },
+        required: ["patientId", "note"],
+      },
+    },
+    {
+      name: "manage_schedule",
+      description: "Allows doctors to block or unblock time slots in their calendar.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          date: { type: SchemaType.STRING, description: "YYYY-MM-DD" },
+          time: { type: SchemaType.STRING, description: "HH:mm AM/PM" },
+          action: { type: SchemaType.STRING, description: "block | unblock" },
+        },
+        required: ["date", "time", "action"],
+      },
+    },
+    {
+      name: "analyze_medical_record",
+      description: "Analyze a specific medical record's file (Image/PDF) to extract details like blood test values, prescriptions, or diagnosis. Required for understanding uploaded files.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          recordId: { type: SchemaType.STRING, description: "The Firestore ID of the medical record." },
+        },
+        required: ["recordId"],
+      },
+    },
+    {
       name: "create_medical_record",
       description: "Create a medical record for the logged-in patient.",
       parameters: {
@@ -454,9 +515,24 @@ function toolDeclarations(): FunctionDeclaration[] {
 function norm(s: string) {
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/dr\.|dr\s/g, "") // Remove Dr. prefix
+    .replace(/[^a-z0-9\s\u0900-\u097F]/g, " ") // Keep alphanumeric, spaces, and Devanagari (Hindi/Marathi)
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function nameMatches(query: string, target: string): boolean {
+  const q = norm(query);
+  const t = norm(target);
+  if (!q || !t) return false;
+  
+  // Direct inclusion
+  if (t.includes(q) || q.includes(t)) return true;
+  
+  // Word by word check
+  const qWords = q.split(" ").filter(w => w.length > 2);
+  const tWords = t.split(" ");
+  return qWords.some(qw => tWords.some(tw => tw.startsWith(qw) || tw === qw));
 }
 
 export async function executePrakritiTool(
@@ -465,6 +541,7 @@ export async function executePrakritiTool(
   args: Record<string, unknown>,
   sessionUid: string | undefined,
   userRole: string | undefined,
+  genAI?: GoogleGenerativeAI,
 ): Promise<Record<string, unknown>> {
   const needLogin = () => ({ error: "Not logged in. Ask the user to sign in." });
   const needPatient = () => ({ error: "This action requires a patient account." });
@@ -518,7 +595,7 @@ export async function executePrakritiTool(
     case "search_doctors": {
       const limit = Math.min(Number(args.limit) || 12, 50);
       const spec = args.specialization ? String(args.specialization) : "";
-      const nameQ = args.nameQuery ? norm(String(args.nameQuery)) : "";
+      const nameQ = args.nameQuery ? String(args.nameQuery) : "";
       const snap = await db.collection("doctors").limit(250).get();
       let list = snap.docs.map((x) => ({ id: x.id, ...x.data() })) as Record<string, unknown>[];
       if (spec) {
@@ -526,7 +603,7 @@ export async function executePrakritiTool(
         list = list.filter((d) => String(d.specialization || "").toLowerCase().includes(sn));
       }
       if (nameQ) {
-        list = list.filter((d) => norm(String(d.name || "")).includes(nameQ));
+        list = list.filter((d) => nameMatches(nameQ, String(d.name || "")));
       }
       list.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
       return { doctors: list.slice(0, limit) };
@@ -650,21 +727,45 @@ export async function executePrakritiTool(
       const docSnap = await ref.get();
       if (!docSnap.exists) return { error: "Appointment not found" };
       const data = docSnap.data()!;
-      if (data.patientId !== sessionUid && userRole !== "admin") {
-        return { error: "You can only cancel your own appointments." };
+
+      // Resolve doctor UID to check permissions
+      const dsnap = await db.collection("doctors").doc(data.doctorId).get();
+      const doctorUid = dsnap.exists ? dsnap.data()?.userId : null;
+
+      const isPatient = data.patientId === sessionUid;
+      const isDoctor = doctorUid === sessionUid;
+
+      if (!isPatient && !isDoctor && userRole !== "admin") {
+        return { error: "Permission denied. You can only cancel appointments you are part of." };
       }
+
       await ref.update({
         status: "cancelled",
         cancelledAt: FieldValue.serverTimestamp(),
-        cancellationReason: "Cancelled via Prakriti",
+        cancellationReason: `Cancelled via Prakriti by ${isDoctor ? "doctor" : "patient"}`,
       });
+
+      // Notify the OTHER party
+      const targetUid = isDoctor ? data.patientId : doctorUid;
+      if (targetUid) {
+        await createUserNotification(
+          db,
+          targetUid,
+          "Appointment cancelled",
+          `The booking for ${data.date} at ${data.time} with ${isDoctor ? "Dr. " + data.doctorName : data.patientName} was cancelled.`,
+          "cancellation",
+        );
+      }
+
+      // Confirm to canceller
       await createUserNotification(
         db,
         sessionUid,
-        "Appointment cancelled",
-        `Your booking with ${String(data.doctorName || "the doctor")} was cancelled.`,
+        "Cancellation confirmed",
+        `You have successfully cancelled the appointment with ${isDoctor ? data.patientName : "Dr. " + data.doctorName}.`,
         "cancellation",
       );
+
       return { success: true, message: "Appointment cancelled." };
     }
     case "reschedule_appointment": {
@@ -676,24 +777,48 @@ export async function executePrakritiTool(
       const docSnap = await ref.get();
       if (!docSnap.exists) return { error: "Appointment not found" };
       const data = docSnap.data()!;
-      if (data.patientId !== sessionUid && userRole !== "admin") {
-        return { error: "You can only reschedule your own appointments." };
+
+      // Resolve doctor UID
+      const dsnap = await db.collection("doctors").doc(data.doctorId).get();
+      const doctorUid = dsnap.exists ? dsnap.data()?.userId : null;
+
+      const isPatient = data.patientId === sessionUid;
+      const isDoctor = doctorUid === sessionUid;
+
+      if (!isPatient && !isDoctor && userRole !== "admin") {
+        return { error: "Permission denied. You can only reschedule appointments you are part of." };
       }
+
       await ref.update({
         date: newDate,
         time: newTime,
-        status: "pending",
+        status: isDoctor ? "confirmed" : "pending", // Doctors can confirm the new time immediately
         rescheduledAt: FieldValue.serverTimestamp(),
         previousDate: data.date,
         previousTime: data.time,
       });
+
+      // Notify the OTHER party
+      const targetUid = isDoctor ? data.patientId : doctorUid;
+      if (targetUid) {
+        await createUserNotification(
+          db,
+          targetUid,
+          "Appointment rescheduled",
+          `${isDoctor ? "Dr. " + data.doctorName : data.patientName} has moved the session to ${newDate} at ${newTime}.`,
+          "appointment",
+        );
+      }
+
+      // Confirm to rescheduler
       await createUserNotification(
         db,
         sessionUid,
-        "Appointment rescheduled",
-        `New time: ${newDate} at ${newTime}. Complete payment if required to confirm.`,
+        "Reschedule successful",
+        `Meeting with ${isDoctor ? data.patientName : "Dr. " + data.doctorName} moved to ${newDate}.`,
         "appointment",
       );
+
       return { success: true, message: `Rescheduled to ${newDate} ${newTime}.` };
     }
     case "list_my_medical_records": {
@@ -712,6 +837,96 @@ export async function executePrakritiTool(
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         return { records: list.slice(0, limit) };
       }
+    }
+    case "get_patient_records": {
+      if (!sessionUid) return needLogin();
+      if (userRole !== "doctor" && userRole !== "admin") return { error: "Only doctors can search patient records." };
+      const patientName = String(args.patientName || "");
+      let patientId = String(args.patientId || "");
+      const limit = Math.min(Number(args.limit) || 20, 50);
+
+      let uids: string[] = [];
+
+      // Resolve uids if name is given
+      if (patientName && !patientId) {
+        const userSnap = await db.collection("users").where("role", "==", "patient").limit(100).get();
+        uids = userSnap.docs
+          .filter(d => nameMatches(patientName, d.data().name || ""))
+          .map(d => d.id);
+        
+        if (uids.length === 0) {
+          return { error: `No patient found with name "${patientName}".` };
+        }
+      } else if (patientId) {
+        uids = [patientId];
+      }
+
+      if (uids.length === 0) return { error: "Please provide a patient name or ID." };
+
+      try {
+        // Query records for all matching UIDs
+        const snap = await db.collection("medical_records")
+          .where("userId", "in", uids.slice(0, 30)) // Firestore limit for 'in' query
+          .orderBy("createdAt", "desc")
+          .limit(limit)
+          .get();
+        return { records: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
+      } catch {
+        // Fallback without ordering
+        const snap = await db.collection("medical_records")
+          .where("userId", "in", uids.slice(0, 30))
+          .get();
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        return { records: list.slice(0, limit) };
+      }
+    }
+    case "add_clinical_note": {
+      if (!sessionUid) return needLogin();
+      if (userRole !== "doctor" && userRole !== "admin") return { error: "Only doctors can add clinical notes." };
+      const patientId = String(args.patientId || "");
+      const note = String(args.note || "");
+      const appointmentId = String(args.appointmentId || "");
+      const diagnosis = String(args.diagnosis || "");
+
+      const ds = await db.collection("doctors").where("userId", "==", sessionUid).limit(1).get();
+      const doctorName = ds.empty ? "Doctor" : ds.docs[0].data().name;
+
+      const ref = await db.collection("medical_records").add({
+        userId: patientId,
+        doctorId: sessionUid,
+        doctorName,
+        title: `Clinical Note - ${new Date().toLocaleDateString()}`,
+        type: "clinical_note",
+        description: note,
+        diagnosis,
+        appointmentId,
+        date: new Date().toISOString().split("T")[0],
+        createdAt: FieldValue.serverTimestamp(),
+        source: "prakriti_doctor_agent",
+      });
+      return { success: true, recordId: ref.id, message: "Clinical note added to patient records." };
+    }
+    case "manage_schedule": {
+      if (!sessionUid) return needLogin();
+      if (userRole !== "doctor") return { error: "Only doctors can manage their schedule." };
+      const date = String(args.date || "");
+      const action = String(args.action || "block");
+      const time = String(args.time || "");
+
+      const ds = await db.collection("doctors").where("userId", "==", sessionUid).limit(1).get();
+      if (ds.empty) return { error: "Doctor profile not found." };
+      const docId = ds.docs[0].id;
+
+      if (action === "block") {
+        await db.collection("doctors").doc(docId).update({
+          unavailableSlots: FieldValue.arrayUnion(time ? `${date} ${time}` : date)
+        });
+      } else {
+        await db.collection("doctors").doc(docId).update({
+          unavailableSlots: FieldValue.arrayRemove(time ? `${date} ${time}` : date)
+        });
+      }
+      return { success: true, message: `Schedule updated: ${action}ed ${date} ${time}`.trim() };
     }
     case "create_medical_record": {
       if (!sessionUid) return needLogin();
@@ -752,6 +967,62 @@ export async function executePrakritiTool(
         };
       } catch (e: unknown) {
         return { error: String(e) };
+      }
+    }
+    case "analyze_medical_record": {
+      if (!sessionUid) return needLogin();
+      const recordId = String(args.recordId || "");
+      if (!recordId) return { error: "recordId is required" };
+
+      const recSnap = await db.collection("medical_records").doc(recordId).get();
+      if (!recSnap.exists) return { error: "Medical record not found." };
+      const record = recSnap.data()!;
+
+      // Check permissions: only doctor or the patient who owns the record can analyze it
+      if (userRole !== "doctor" && userRole !== "admin" && record.userId !== sessionUid) {
+        return { error: "Access denied. You do not have permission to view this record." };
+      }
+
+      const fileUrl = record.fileUrl;
+      if (!fileUrl) return { error: "This record has no file attached." };
+
+      try {
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error(`Failed to download file: ${response.statusText}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const base64 = buffer.toString("base64");
+
+        let mimeType = "image/jpeg";
+        if (fileUrl.toLowerCase().endsWith(".pdf")) mimeType = "application/pdf";
+        else if (fileUrl.toLowerCase().endsWith(".png")) mimeType = "image/png";
+        else if (fileUrl.toLowerCase().endsWith(".webp")) mimeType = "image/webp";
+        // Fallback for Cloudinary which sometimes hides extensions
+        if (fileUrl.includes("/raw/upload/") || fileUrl.includes("/pdf/")) mimeType = "application/pdf";
+
+        if (!genAI) throw new Error("Generative AI instance not available.");
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        
+        const prompt = "Please analyze this medical document. Extract the main findings, clinical values, prescriptions (name and dosage), and any diagnosis mentioned. If it's a lab report, list the key biomarkers that are outside the normal range. Be professional and accurate.";
+        
+        const result = await model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64,
+              mimeType: mimeType
+            }
+          }
+        ]);
+
+        return { 
+          analysis: result.response.text(),
+          title: record.title,
+          type: record.type,
+          date: record.date
+        };
+      } catch (err: any) {
+        console.error("❌ analyze_medical_record error:", err);
+        return { error: `Analysis failed: ${err.message}` };
       }
     }
     case "get_map_route": {
@@ -857,6 +1128,7 @@ export async function runPrakritiAgent(
           (call.args || {}) as Record<string, unknown>,
           sessionUid,
           userRole,
+          genAI,
         );
         mergePaymentPrompts(paymentPrompts, paymentPromptsFromToolResult(call.name, out as Record<string, unknown>));
         mergeUiCards(uiCards, uiCardsFromToolResult(call.name, out as Record<string, unknown>));

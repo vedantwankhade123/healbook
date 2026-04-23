@@ -81,64 +81,80 @@ export async function buildUserContext(db: Firestore, userId: string): Promise<s
       data.medicalConditions ? `Medical Conditions: ${data.medicalConditions}` : null,
     ].filter(Boolean) as string[];
 
+    const name = (data.name as string) || "User";
+    
     if (data.role === "doctor") {
       const doctorSnap = await db.collection("doctors").where("userId", "==", userId).limit(1).get();
       if (!doctorSnap.empty) {
-        const doc = doctorSnap.docs[0].data();
+        const docId = doctorSnap.docs[0].id;
+        const docData = doctorSnap.docs[0].data();
         fields.push(
-          `Doctor Profile ID: ${doctorSnap.docs[0].id}`,
-          doc.specialization ? `Specialization: ${doc.specialization}` : "",
-          doc.experience ? `Experience: ${doc.experience} years` : "",
-          doc.clinicName ? `Clinic: ${doc.clinicName}` : "",
-          doc.rating ? `Rating: ${doc.rating}` : "",
+          `Doctor Profile ID: ${docId}`,
+          docData.specialization ? `Specialization: ${docData.specialization}` : "",
+          docData.clinicName ? `Clinic: ${docData.clinicName}` : "",
         );
+
+        // Fetch upcoming appointments for the doctor
+        const today = new Date().toISOString().split("T")[0];
+        const scheduleSnap = await db.collection("appointments")
+          .where("doctorId", "==", docId)
+          .where("status", "==", "confirmed")
+          .get();
+
+        const schedule = scheduleSnap.docs
+          .map(d => d.data())
+          .filter(a => a.date >= today)
+          .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+          .slice(0, 5);
+
+        if (schedule.length > 0) {
+          fields.push(`Upcoming Schedule:\n${schedule.map(a => `  - ${a.patientName} on ${a.date} at ${a.time} (${a.visitType})`).join("\n")}`);
+        } else {
+          fields.push("You have no confirmed appointments scheduled for today or the future.");
+        }
       }
+    } else {
+      // Patient specific context
+      try {
+        const apptSnap = await db
+          .collection("appointments")
+          .where("patientId", "==", userId)
+          .orderBy("createdAt", "desc")
+          .limit(5)
+          .get();
+
+        if (!apptSnap.empty) {
+          const appointments = apptSnap.docs.map((d) => {
+            const a = d.data();
+            return `  - ${a.doctorName || "Unknown"} (${a.doctorSpecialization || "N/A"}) on ${a.date} at ${a.time} — Status: ${a.status}`;
+          });
+          fields.push(`Recent Appointments:\n${appointments.join("\n")}`);
+        }
+      } catch {}
+
+      try {
+        const recordsSnap = await db
+          .collection("medical_records")
+          .where("userId", "==", userId)
+          .orderBy("createdAt", "desc")
+          .limit(5)
+          .get();
+
+        if (!recordsSnap.empty) {
+          const records = recordsSnap.docs.map((d) => {
+            const r = d.data();
+            const desc = String(r.description || "").substring(0, 100);
+            return `  - ${r.title || "Untitled"} (${r.type || "note"}) on ${r.date || "unknown date"}: ${desc}${String(r.description || "").length > 100 ? "..." : ""}`;
+          });
+          fields.push(`Recent Medical Records:\n${records.join("\n")}`);
+        }
+      } catch {}
     }
 
-    try {
-      const apptSnap = await db
-        .collection("appointments")
-        .where("patientId", "==", userId)
-        .orderBy("createdAt", "desc")
-        .limit(5)
-        .get();
-
-      if (!apptSnap.empty) {
-        const appointments = apptSnap.docs.map((d) => {
-          const a = d.data();
-          return `  - ${a.doctorName || "Unknown"} (${a.doctorSpecialization || "N/A"}) on ${a.date} at ${a.time} — Status: ${a.status}`;
-        });
-        fields.push(`Recent Appointments:\n${appointments.join("\n")}`);
-      }
-    } catch {
-      // index may be missing
-    }
-
-    try {
-      const recordsSnap = await db
-        .collection("medical_records")
-        .where("userId", "==", userId)
-        .orderBy("createdAt", "desc")
-        .limit(5)
-        .get();
-
-      if (!recordsSnap.empty) {
-        const records = recordsSnap.docs.map((d) => {
-          const r = d.data();
-          const desc = String(r.description || "").substring(0, 100);
-          return `  - ${r.title || "Untitled"} (${r.type || "note"}) on ${r.date || "unknown date"}: ${desc}${String(r.description || "").length > 100 ? "..." : ""}`;
-        });
-        fields.push(`Recent Medical Records:\n${records.join("\n")}`);
-      }
-    } catch {
-      // index may be missing
-    }
-
-    const name = (data.name as string) || "Patient";
     return `
 ─── CURRENT USER CONTEXT ───
 ${fields.join("\n")}
-IMPORTANT: You are speaking with ${name} (User ID: ${userId}).
+IMPORTANT: You are speaking with ${name} (Role: ${data.role || "patient"}).
 ─────────────────────────────
 `;
   } catch (err) {

@@ -8,19 +8,26 @@ import {
   where, 
   orderBy, 
   getDocs,
-  updateDoc,
   doc,
-  documentId 
+  documentId,
+  addDoc,
+  setDoc,
+  serverTimestamp
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { apiJson } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { Appointment } from "@/types";
+import { Appointment, Doctor } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { PrescriptionModal } from "@/components/dashboard/PrescriptionModal";
+import { ViewPrescriptionModal } from "@/components/dashboard/ViewPrescriptionModal";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { RescheduleModal } from "@/components/appointments/RescheduleModal";
+import { NotificationHub } from "@/components/notifications/NotificationHub";
+import { useNotifications } from "@/context/NotificationContext";
 import { format, parse, isAfter } from "date-fns";
 
 export default function DoctorDashboard() {
@@ -34,8 +41,15 @@ export default function DoctorDashboard() {
   // Modals & States
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedAppointmentForPrescription, setSelectedAppointmentForPrescription] = useState<Appointment | null>(null);
+  const [selectedAppointmentForView, setSelectedAppointmentForView] = useState<string | null>(null);
+  const [prescriptionsExist, setPrescriptionsExist] = useState<Set<string>>(new Set());
+  const [doctorProfile, setDoctorProfile] = useState<Doctor | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const { notifications } = useNotifications();
+  const unreadCount = notifications.filter(n => !n.read).length;
   
   const todayStr = format(new Date(), "yyyy-MM-dd");
 
@@ -56,7 +70,10 @@ export default function DoctorDashboard() {
           return;
         }
 
-        const clinicalDoctorId = doctorSnapshot.docs[0].id;
+        const dDoc = doctorSnapshot.docs[0];
+        const dData = { id: dDoc.id, ...dDoc.data() } as Doctor;
+        setDoctorProfile(dData);
+        const clinicalDoctorId = dDoc.id;
 
         // 2. Fetch appointments using the correctly mapped clinicalDoctorId
         const q = query(
@@ -88,6 +105,21 @@ export default function DoctorDashboard() {
           }
           setPatientPhotos(photos);
         }
+
+        // 4. Check for existing prescriptions
+        const appointmentIds = data.map(a => a.id).filter(Boolean);
+        if (appointmentIds.length > 0) {
+          const existingSet = new Set<string>();
+          for (let i = 0; i < appointmentIds.length; i += 30) {
+            const chunk = appointmentIds.slice(i, i + 30);
+            const presSnap = await getDocs(query(
+              collection(db, "prescriptions"),
+              where(documentId(), "in", chunk)
+            ));
+            presSnap.docs.forEach(d => existingSet.add(d.id));
+          }
+          setPrescriptionsExist(existingSet);
+        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
@@ -100,9 +132,9 @@ export default function DoctorDashboard() {
   const updateStatus = async (appointmentId: string, status: string) => {
     setIsActionLoading(true);
     try {
-      await updateDoc(doc(db, "appointments", appointmentId), { 
-        status,
-        updatedAt: new Date()
+      await apiJson(`/api/appointments/${appointmentId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
       });
       setAppointments(prev => prev.map(apt => apt.id === appointmentId ? { ...apt, status } as Appointment : apt));
       toast.success(`Check-up marked as ${status}`);
@@ -114,14 +146,49 @@ export default function DoctorDashboard() {
     }
   };
 
+  const handlePrescriptionSubmit = async (data: { notes: string; medicines: any[] }) => {
+    if (!selectedAppointmentForPrescription || !doctorProfile) return;
+    
+    try {
+      // 1. Save or update prescription record (using appointmentId as the doc ID)
+      await setDoc(doc(db, "prescriptions", selectedAppointmentForPrescription.id), {
+        appointmentId: selectedAppointmentForPrescription.id,
+        patientId: selectedAppointmentForPrescription.patientId,
+        doctorId: doctorProfile.id,
+        doctorName: doctorProfile.name,
+        clinicName: doctorProfile.clinicName,
+        date: format(new Date(), "yyyy-MM-dd"),
+        notes: data.notes,
+        medicines: data.medicines,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // 2. Update appointment status to completed (if not already)
+      if (selectedAppointmentForPrescription.status !== "completed") {
+        await updateStatus(selectedAppointmentForPrescription.id!, "completed");
+      } else {
+        toast.success("Prescription updated successfully");
+      }
+      
+      
+      setPrescriptionsExist(prev => new Set([...prev, selectedAppointmentForPrescription.id]));
+      setSelectedAppointmentForPrescription(null);
+    } catch (error: any) {
+      toast.error("Failed to save prescription: " + error.message);
+      throw error;
+    }
+  };
+
   const handleReschedule = async (newDate: string, newTime: string) => {
     if (!selectedAppointment) return;
     setIsActionLoading(true);
     try {
-      await updateDoc(doc(db, "appointments", selectedAppointment.id!), {
-        date: newDate,
-        time: newTime,
-        updatedAt: new Date()
+      await apiJson(`/api/appointments/${selectedAppointment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          date: newDate,
+          time: newTime
+        })
       });
       setAppointments(prev => prev.map(apt => 
         apt.id === selectedAppointment.id ? { ...apt, date: newDate, time: newTime } as Appointment : apt
@@ -143,9 +210,7 @@ export default function DoctorDashboard() {
     if (a.status !== 'confirmed' && a.status !== 'pending') return false;
     const appointmentDateTime = parse(`${a.date} ${a.time}`, "yyyy-MM-dd hh:mm a", new Date());
     const isPast = isAfter(new Date(), appointmentDateTime);
-    const isToday = a.date === todayStr;
 
-    // Inclusion criteria: Strictly Future or Today's upcoming slots (not yet passed)
     return !isPast;
   });
 
@@ -221,9 +286,29 @@ export default function DoctorDashboard() {
             <h1 className="text-3xl md:text-5xl font-bold text-slate-900 font-poppins tracking-tighter">
                 Today's <span className="text-primary font-medium">work</span>
             </h1>
-            <div className="flex items-center bg-surface-container-high border border-outline-variant/20 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 transition-all gap-2 shadow-sm">
-                <span className="material-symbols-outlined text-slate-400 text-[16px] sm:text-[18px]">calendar_today</span>
-                <span className="text-xs sm:text-sm font-bold font-poppins whitespace-nowrap tracking-tight text-slate-900">{format(new Date(), "MMMM dd, yyyy")}</span>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button 
+                  onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                  className={`flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full transition-all relative ${isNotificationsOpen ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-400 hover:text-primary'}`}
+                >
+                  <span className="material-symbols-outlined text-[20px] sm:text-[22px]">notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-surface group-hover:scale-110 transition-transform">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+                <NotificationHub 
+                  isOpen={isNotificationsOpen} 
+                  onClose={() => setIsNotificationsOpen(false)}
+                  className="top-full right-0 mt-3 w-[calc(100vw-2rem)] md:w-[420px] origin-top-right"
+                />
+              </div>
+              <div className="flex items-center bg-surface-container-high border border-outline-variant/20 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 transition-all gap-2 shadow-sm h-10 sm:h-12">
+                  <span className="material-symbols-outlined text-slate-400 text-[16px] sm:text-[18px]">calendar_today</span>
+                  <span className="text-xs sm:text-sm font-bold font-poppins whitespace-nowrap tracking-tight text-slate-900">{format(new Date(), "MMMM dd, yyyy")}</span>
+              </div>
             </div>
           </div>
           <p className="text-slate-500 font-medium text-lg">Hello <span className="text-red-500 font-bold">Dr. {user?.name?.replace(/^Dr\.?\s+/i, '').split(" ")[0]}</span>, here is what your day looks like.</p>
@@ -290,8 +375,8 @@ export default function DoctorDashboard() {
                       const dateBadge = apt.date === todayStr ? 'Today' : apt.date === format(new Date(new Date().setDate(new Date().getDate() + 1)), "yyyy-MM-dd") ? 'Tomorrow' : apt.date;
                       return (
                         <div key={apt.id} className="w-full flex-shrink-0">
-                          <Card variant="elevated" className="p-0 overflow-hidden border-none rounded-[3rem] shadow-ambient bg-gradient-to-br from-primary to-blue-600 text-white relative">
-                            <div className="p-10 flex flex-col md:flex-row gap-8 items-center">
+                          <Card variant="elevated" className="p-0 overflow-hidden border-none rounded-2xl sm:rounded-[3rem] shadow-ambient bg-gradient-to-br from-primary to-blue-600 text-white relative">
+                            <div className="p-6 sm:p-10 flex flex-col md:flex-row gap-6 sm:gap-8 items-center">
                                 {/* Profile Photo */}
                                 <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center border border-white/20 shadow-xl overflow-hidden flex-shrink-0">
                                     {patientPhotos[apt.patientId] ? (
@@ -319,9 +404,30 @@ export default function DoctorDashboard() {
 
                                 {/* Actions */}
                                 <div className="flex flex-col gap-3 min-w-[180px]">
-                                    <Button onClick={() => updateStatus(apt.id!, "completed")} className="bg-white text-primary hover:bg-blue-50 h-12 rounded-2xl font-bold text-sm shadow-xl border-none">
-                                        Finish Meeting
-                                    </Button>
+                                    {prescriptionsExist.has(apt.id) ? (
+                                      <div className="flex flex-col gap-2">
+                                        <Button 
+                                          onClick={() => setSelectedAppointmentForView(apt.id)} 
+                                          className="bg-white text-primary hover:bg-blue-50 h-12 rounded-2xl font-bold text-sm shadow-xl border-none"
+                                        >
+                                            View Prescription
+                                        </Button>
+                                        <Button 
+                                          variant="ghost"
+                                          onClick={() => setSelectedAppointmentForPrescription(apt)} 
+                                          className="text-white hover:bg-white/10 h-10 rounded-xl font-bold text-[10px] tracking-widest uppercase border border-white/20"
+                                        >
+                                            Edit Record
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <Button 
+                                        onClick={() => setSelectedAppointmentForPrescription(apt)} 
+                                        className="bg-white text-primary hover:bg-blue-50 h-12 rounded-2xl font-bold text-sm shadow-xl border-none"
+                                      >
+                                          Finish Meeting
+                                      </Button>
+                                    )}
                                     <div className="grid grid-cols-2 gap-2">
                                         <Button variant="ghost" onClick={() => { setSelectedAppointment(apt); setIsRescheduleOpen(true); }} className="border border-white/20 text-white hover:bg-white/10 h-10 text-[10px] font-bold rounded-xl">
                                             Reschedule
@@ -356,9 +462,9 @@ export default function DoctorDashboard() {
                 <div className="space-y-4">
                     {finishedRecently.length > 0 ? (
                         finishedRecently.map((apt) => (
-                            <Card key={apt.id} variant="outline" className="p-0 bg-gradient-to-br from-white via-white to-primary/10 border-slate-100 hover:border-primary/20 transition-all rounded-[2.5rem] flex items-stretch overflow-hidden group shadow-sm">
-                                <div className="w-32 bg-sky-50 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-100/80 transition-colors py-4">
-                                    <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center text-slate-400 text-xl font-black border-[4px] border-white shadow-xl group-hover:scale-110 transition-transform overflow-hidden relative">
+                            <Card key={apt.id} variant="outline" className="p-0 bg-gradient-to-br from-white via-white to-primary/10 border-slate-100 hover:border-primary/20 transition-all rounded-2xl md:rounded-[2.5rem] flex flex-col md:flex-row items-stretch overflow-hidden group shadow-sm">
+                                <div className="w-full md:w-32 bg-sky-50 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-100/80 transition-colors py-6 md:py-4">
+                                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white flex items-center justify-center text-slate-400 text-xl font-black border-[4px] border-white shadow-xl group-hover:scale-110 transition-transform overflow-hidden relative">
                                         {patientPhotos[apt.patientId] ? (
                                             <img src={patientPhotos[apt.patientId]} alt={apt.patientName} className="w-full h-full object-cover" />
                                         ) : (
@@ -366,7 +472,7 @@ export default function DoctorDashboard() {
                                         )}
                                     </div>
                                 </div>
-                                <div className="flex-1 p-6">
+                                <div className="flex-1 p-5 md:p-6">
                                     <div className="flex items-center gap-2 mb-0.5">
                                         <h4 className="font-bold text-slate-900 font-poppins">{apt.patientName}</h4>
                                         <Badge 
@@ -391,11 +497,42 @@ export default function DoctorDashboard() {
                                         </span>
                                     </div>
                                 </div>
-                                <Link to={`/doctor-dashboard/records?patientId=${apt.patientId}`}>
-                                    <Button variant="ghost" className="h-10 px-4 rounded-xl text-[10px] font-bold tracking-widest opacity-60 hover:opacity-100 hover:bg-primary/5 hover:text-primary transition-all">
-                                        Clinical history
-                                    </Button>
-                                </Link>
+                                <div className="flex flex-row md:flex-col gap-2 p-4 md:p-4 justify-center bg-white/50 md:bg-transparent border-t md:border-t-0 border-slate-100">
+                                    {prescriptionsExist.has(apt.id) ? (
+                                      <>
+                                        <Button 
+                                            variant="ghost" 
+                                            onClick={() => setSelectedAppointmentForView(apt.id)}
+                                            className="flex-1 md:flex-none h-10 px-4 rounded-xl text-[10px] font-bold tracking-widest text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">visibility</span>
+                                            <span className="md:inline">View</span>
+                                        </Button>
+                                        <Button 
+                                            variant="ghost" 
+                                            onClick={() => setSelectedAppointmentForPrescription(apt)}
+                                            className="flex-1 md:flex-none h-10 px-4 rounded-xl text-[10px] font-bold tracking-widest text-slate-500 hover:bg-slate-100 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">edit</span>
+                                            <span className="md:inline">Edit</span>
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <Button 
+                                          variant="ghost" 
+                                          onClick={() => setSelectedAppointmentForPrescription(apt)}
+                                          className="flex-1 md:flex-none h-10 px-4 rounded-xl text-[10px] font-bold tracking-widest text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
+                                      >
+                                          <span className="material-symbols-outlined text-sm">edit_note</span>
+                                          <span className="md:inline">Prescription</span>
+                                      </Button>
+                                    )}
+                                    <Link to={`/doctor-dashboard/records?patientId=${apt.patientId}`} className="flex-1 md:flex-none">
+                                        <Button variant="ghost" className="w-full h-10 px-4 rounded-xl text-[10px] font-bold tracking-widest opacity-60 hover:opacity-100 hover:bg-slate-100 transition-all">
+                                            History
+                                        </Button>
+                                    </Link>
+                                </div>
                             </Card>
                         ))
                     ) : (
@@ -471,6 +608,24 @@ export default function DoctorDashboard() {
         onConfirm={handleReschedule}
         appointment={selectedAppointment}
         isLoading={isActionLoading}
+      />
+
+      {/* Prescription Modal */}
+      {selectedAppointmentForPrescription && doctorProfile && (
+        <PrescriptionModal
+            isOpen={!!selectedAppointmentForPrescription}
+            onClose={() => setSelectedAppointmentForPrescription(null)}
+            appointment={selectedAppointmentForPrescription}
+            doctor={doctorProfile}
+            onSubmit={handlePrescriptionSubmit}
+        />
+      )}
+
+      {/* View Prescription Modal */}
+      <ViewPrescriptionModal
+        isOpen={!!selectedAppointmentForView}
+        onClose={() => setSelectedAppointmentForView(null)}
+        appointmentId={selectedAppointmentForView || ""}
       />
     </div>
   );

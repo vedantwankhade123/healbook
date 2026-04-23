@@ -12,6 +12,7 @@ import { useNotifications } from "@/context/NotificationContext";
 import { apiJson, apiFetch } from "@/lib/api";
 import { ReceiptModal } from "@/components/appointments/ReceiptModal";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
+import { ViewPrescriptionModal } from "@/components/dashboard/ViewPrescriptionModal";
 import { parse, isAfter, subHours, differenceInHours } from "date-fns";
 import { useNavigate } from "react-router-dom";
 
@@ -24,6 +25,7 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [isPrescriptionOpen, setIsPrescriptionOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [appointmentToCancel, setAppointmentToCancel] = useState<{id: string, date: string, time: string} | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -199,6 +201,18 @@ export default function AppointmentsPage() {
                             Cancel
                           </Button>
                       )}
+                      {apt.status === "completed" && (
+                        <Button 
+                          variant="primary" 
+                          className="w-full bg-emerald-500 hover:bg-emerald-600 border-none" 
+                          onClick={() => {
+                            setSelectedAppointment(apt);
+                            setIsPrescriptionOpen(true);
+                          }}
+                        >
+                          View Prescription
+                        </Button>
+                      )}
                       <Button variant="outline" className="w-full" onClick={() => openReceipt(apt)}>View Receipt</Button>
                     </div>
                   );
@@ -219,6 +233,14 @@ export default function AppointmentsPage() {
         <ReceiptModal 
           appointment={selectedAppointment} 
           onClose={() => setIsReceiptOpen(false)} 
+          />
+      )}
+
+      {isPrescriptionOpen && selectedAppointment && (
+        <ViewPrescriptionModal
+            isOpen={isPrescriptionOpen}
+            onClose={() => setIsPrescriptionOpen(false)}
+            appointmentId={selectedAppointment.id}
         />
       )}
 

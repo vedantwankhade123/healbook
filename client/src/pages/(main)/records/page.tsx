@@ -138,24 +138,28 @@ export default function MedicalRecordsPage() {
               Medical <span className="text-primary">Archives</span>
           </h1>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          {filteredRecords.length > 0 && (
+          <div className="flex items-center gap-2">
             <Button
-              variant="error"
-              size="sm"
-              className="!h-11 !rounded-full !px-6 !py-0 bg-red-500 hover:bg-red-600 text-white border-none shadow-lg shadow-red-500/20"
-              onClick={() => {
-                if (selectedIds.length > 0) {
-                  setIsDeleteModalOpen(true);
-                } else {
-                  setIsSelectAllPromptOpen(true);
-                }
-              }}
+                variant={selectedIds.length === filteredRecords.length && filteredRecords.length > 0 ? "primary" : "outline"}
+                size="sm"
+                className="!h-11 !rounded-full !px-6 transition-all font-bold text-xs tracking-widest uppercase shadow-none"
+                onClick={toggleSelectAll}
+                disabled={filteredRecords.length === 0}
             >
-              <span className="material-symbols-outlined text-[18px] mr-2 text-white">delete</span>
-              Delete{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+                {selectedIds.length === filteredRecords.length && filteredRecords.length > 0 ? "Deselect All" : "Select All"}
             </Button>
-          )}
+            {selectedIds.length > 0 && (
+                <Button
+                    variant="error"
+                    size="sm"
+                    className="!h-11 !rounded-full !px-6 bg-red-500 hover:bg-red-600 text-white border-none shadow-lg shadow-red-500/20 animate-in zoom-in-95 duration-200"
+                    onClick={() => setIsDeleteModalOpen(true)}
+                >
+                    <span className="material-symbols-outlined text-[18px] mr-2 text-white">delete_sweep</span>
+                    Delete {selectedIds.length}
+                </Button>
+            )}
+          </div>
           <CloudinaryUpload 
               label="Upload Archives"
               icon="upload_file"
@@ -164,7 +168,6 @@ export default function MedicalRecordsPage() {
                 handleUploadSuccess(url, publicId);
               }}
           />
-        </div>
       </section>
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-2">
@@ -215,10 +218,20 @@ export default function MedicalRecordsPage() {
           [1, 2, 3].map(i => <div key={i} className="h-48 bg-surface-container-low animate-pulse rounded-2xl" />)
         ) : filteredRecords.length > 0 ? (
           filteredRecords.map((record) => (
-            <Card key={record.id} variant="outline" className={`group p-0 overflow-hidden hover:border-primary/40 transition-all flex flex-col relative ${selectedIds.includes(record.id!) ? 'border-primary ring-1 ring-primary/20 bg-primary/[0.02]' : ''}`}>
+            <Card 
+              key={record.id} 
+              variant="outline" 
+              className={`group p-0 overflow-hidden hover:border-primary/40 transition-all flex flex-col relative cursor-pointer select-none ${selectedIds.includes(record.id!) ? 'border-primary ring-2 ring-primary/10 bg-primary/[0.01]' : ''}`}
+              onClick={() => toggleSelect(record.id!)}
+            >
+              {/* Selection Checkbox */}
+              <div className={`absolute top-4 left-4 z-10 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${selectedIds.includes(record.id!) ? 'bg-primary border-primary' : 'bg-white/80 border-slate-200 group-hover:border-primary/40 opacity-0 group-hover:opacity-100'}`}>
+                {selectedIds.includes(record.id!) && <span className="material-symbols-outlined text-white text-lg font-bold">check</span>}
+              </div>
+
               {/* Individual Delete Action */}
               <button 
-                onClick={() => { setDeletingId(record.id!); setIsDeleteModalOpen(true); }}
+                onClick={(e) => { e.stopPropagation(); setDeletingId(record.id!); setIsDeleteModalOpen(true); }}
                 className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm border border-outline-variant/50 text-on-surface-variant hover:text-red-500 hover:border-red-500/50 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
               >
                 <span className="material-symbols-outlined text-lg">delete</span>
@@ -247,7 +260,7 @@ export default function MedicalRecordsPage() {
                 )}
               </div>
               
-              <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex gap-2">
+              <div className="p-4 bg-surface-container-lowest border-t border-outline-variant/10 flex gap-2" onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm" className="flex-1 text-[10px] font-black uppercase tracking-wider" onClick={() => window.open(record.fileUrl, '_blank')}>View</Button>
                 <Button variant="outline" size="sm" className="flex-1 text-[10px] font-black uppercase tracking-wider" onClick={() => window.open(record.fileUrl, '_blank')}>Download</Button>
               </div>
