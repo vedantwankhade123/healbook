@@ -4,7 +4,7 @@ import "../load-env.js";
 async function checkUser() {
   const name = "vedant wankhade";
   const snap = await adminDb.collection("users").where("role", "==", "patient").get();
-  const users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const users = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
   console.log("Found patients:", users.map(u => u.name));
   
   const founds = users.filter(u => {

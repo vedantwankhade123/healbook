@@ -131,28 +131,49 @@ Your `.env.local` should now look like this. Ensure all values are filled.
 
 ---
 
-## 7. Firestore Indexing (Important)
+## 7. Firestore Indexing (Automated)
 
-Some features like high-speed sorting of medical records require "Composite Indexes" in Firestore.
+HealBook requires **9 Composite Indexes** for high-speed clinical data sorting. You can now build all of them at once using the Firebase CLI.
 
-1. Go to your **Firestore Database** in the Firebase Console.
-2. Click the **Indexes** tab.
-3. Click **Composite** and then **Create Index**.
-4. Add the following **9 required indexes**:
+### Step 1: Install Firebase CLI
+If you don't have it, install the tools globally:
+```bash
+npm install -g firebase-tools
+```
 
-| Collection | Fields (with direction) |
-| :--- | :--- |
-| `appointments` | `doctorId` (Asc), `date` (Desc), `time` (Desc) |
-| `appointments` | `doctorId` (Asc), `createdAt` (Desc) |
-| `appointments` | `patientId` (Asc), `createdAt` (Desc) |
-| `appointments` | `doctorId` (Asc), `date` (Asc) |
-| `appointments` | `patientId` (Asc), `date` (Asc), `time` (Asc) |
-| `doctors` | `specialization` (Asc), `rating` (Desc) |
-| `medical_records` | `userId` (Asc), `createdAt` (Desc) |
-| `notifications` | `userId` (Asc), `createdAt` (Desc) |
-| `users` | `role` (Asc), `createdAt` (Desc) |
+### Step 2: Login and Link Project
+1. Log in to your Google account:
+   ```bash
+   firebase login
+   ```
+2. Link the local folder to your Firebase project:
+   ```bash
+   firebase use --add
+   ```
+   *(Select your project and alias it as `default`)*
 
-*Without these indexes, the Appointments, Doctors List, Records, and Admin Dashboards will fail to load or sort data correctly.*
+### Step 3: Deploy All Indexes
+Run the following command to build all 9 required indexes automatically using the `firestore.indexes.json` file provided in the root:
+```bash
+firebase deploy --only firestore:indexes
+```
+
+### Verification (Manual Reference)
+The command above creates the following indexes required for the system:
+
+| Collection | Fields (with direction) | Feature |
+| :--- | :--- | :--- |
+| `appointments` | `doctorId` (Asc), `date` (Desc), `time` (Desc) | Doctor Dashboard |
+| `appointments` | `doctorId` (Asc), `createdAt` (Desc) | Records Sorting |
+| `appointments` | `patientId` (Asc), `createdAt` (Desc) | Patient History |
+| `appointments` | `doctorId` (Asc), `date` (Asc) | Schedule View |
+| `appointments` | `patientId` (Asc), `date` (Asc), `time` (Asc) | Patient Schedule |
+| `doctors` | `specialization` (Asc), `rating` (Desc) | Doctor Discovery |
+| `medical_records` | `userId` (Asc), `createdAt` (Desc) | Archive Filtering |
+| `notifications` | `userId` (Asc), `createdAt` (Desc) | Alerts Hub |
+| `users` | `role` (Asc), `createdAt` (Desc) | Admin Management |
+
+*Note: It may take 5-10 minutes for Firestore to fully build these indexes once the command is finished.*
 
 ---
 
@@ -252,5 +273,24 @@ For Firebase Authentication to work on your live site, you must whitelist the Ne
 3. Paste your Netlify site URL (e.g., `healbook-123.netlify.app`).
 4. Click **Add**.
    *Note: Without this step, users will see an "Unauthorized Domain" error when trying to log in.*
+
+---
+
+## 11. Clinical Documentation Workflow (Optimized)
+
+HealBook features a specialized, icon-free clinical documentation system designed for high-density mobile usage.
+
+### Digital Prescriptions
+1. **Simplified Interface**: The prescription entry modal is optimized for focus, using clean typography and removing all distracting medical icons.
+2. **Conditional Buttons**: The Doctor Dashboard intelligently displays "View Prescription" for existing records and "Edit" for revisions, ensuring a streamlined workflow.
+3. **Verified Signatures**: All prescriptions include a digital verification header and professional clinical branding.
+
+### Medical Archive & Records
+1. **Bulk Management**: Users can now use "Select All" and "Batch Delete" in the Medical Records section for fast archive cleanup.
+2. **Interactive Selection**: Record cards support tap-to-select and feature visual checkboxes for intuitive multi-record management.
+
+### Security & Data Sync
+1. **Pre-configured Rules**: The `firestore.rules` file in this repository is pre-configured to allow secure, real-time synchronization of clinical records between doctors and patients.
+2. **Optimized Lookups**: The system uses high-performance direct document mapping (Appointment ID → Prescription ID), ensuring clinical data loads instantly without complex indexing.
 
 ---
