@@ -87,9 +87,14 @@ const generateDoctors = () => {
       const lastName = names[(sIdx * 3 + i) % names.length];
       const fullName = `${firstName} ${lastName}`;
       
+      // Generate email in firstname.lastname@healbook.in format
+      const cleanFirstName = firstName.replace("Dr. ", "").toLowerCase();
+      const cleanLastName = lastName.toLowerCase();
+      const email = `${cleanFirstName}.${cleanLastName}@healbook.in`;
+      
       doctors.push({
         name: fullName,
-        email: `${s.spec.toLowerCase().replace(/\s+/g, "")}_${i}@healbook.test`,
+        email: email,
         specialization: s.spec,
         experience: 5 + (i % 20),
         clinicName: `${lastName} Clinical Center, ${city}`,
